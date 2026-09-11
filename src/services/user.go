@@ -8,10 +8,13 @@ import (
 )
 
 type UserService struct {
+	userRepository core.UserRepository
 }
 
-func NewUserService() core.UserService {
-	return &UserService{}
+func NewUserService(userRepository core.UserRepository) core.UserService {
+	return &UserService{
+		userRepository: userRepository,
+	}
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *core.User) (core.User, error) {
