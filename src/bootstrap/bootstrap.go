@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/andretop97/UserApiV2/src/controllers"
+	"github.com/andretop97/UserApiV2/src/migrations"
 	"github.com/andretop97/UserApiV2/src/repositories"
 	"github.com/andretop97/UserApiV2/src/repositories/postgres"
 	"github.com/andretop97/UserApiV2/src/repositories/redis"
@@ -21,16 +22,6 @@ type Container struct {
 }
 
 func NewContainer() (*Container, error) {
-	postgresqlConfig, err := utils.NewPostgresqlEnv()
-	if err != nil {
-		return nil, err
-	}
-	pgxPool, err := pgxpool.New(context.Background(), postgresqlConfig.ConnectionString())
-	if err != nil {
-		return nil, err
-	}
-	postgresRepository := postgres.NewUserRepository(pgxPool)
-
 	redisConfig, err := utils.NewRedisEnv()
 	if err != nil {
 		return nil, err
@@ -40,6 +31,33 @@ func NewContainer() (*Container, error) {
 		Password: redisConfig.Password,
 		DB:       redisConfig.Database,
 	})
+
+	healthCheck := redis.NewHealthCheck(redisClient)
+	err = healthCheck.HandShake()
+	if err != nil {
+		return nil, err
+	}
+
+	postgresqlConfig, err := utils.NewPostgresqlEnv()
+	if err != nil {
+		redisClient.Close()
+		return nil, err
+	}
+
+	err = migrations.AutoMigrate()
+	if err != nil {
+		redisClient.Close()
+		return nil, err
+	}
+
+	pgxPool, err := pgxpool.New(context.Background(), postgresqlConfig.ConnectionString())
+	if err != nil {
+		redisClient.Close()
+		return nil, err
+	}
+
+	postgresRepository := postgres.NewUserRepository(pgxPool)
+
 	redisRepository := redis.NewUserRepository(redisClient)
 
 	userRepository := repositories.NewUserRepository(redisRepository, postgresRepository)

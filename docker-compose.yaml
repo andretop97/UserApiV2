@@ -1,20 +1,39 @@
 services:
-  UserApiV2:
-    build: .
+  postgres:
+    image: postgres:18.3
     ports:
-      - "8080:8080"
+      - 5432:5432
     environment:
-      - ENV=production
+      POSTGRES_USER: ${POSTGRESQL_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+      POSTGRES_DB: ${POSTGRESQL_DATABASE}
     volumes:
-      - ./web:/usr/src/app
-    depends_on:
-      - db
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRESQL_USERNAME}", "-d", "${POSTGRESQL_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
 
-  db:
-    image: postgres:13
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: mydatabase
+  redis:
+    image: redis:7.2
+    ports:
+      - "6379:6379"
     volumes:
-      - db-data:/var/lib/postgresql/data
+        - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+      
+volumes:
+  db:
+  redis:
+
+networks:
+  backend:

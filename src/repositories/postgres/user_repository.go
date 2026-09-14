@@ -1,6 +1,8 @@
 package postgres
 
 import (
+	"context"
+
 	"github.com/andretop97/UserApiV2/src/core"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,34 +18,39 @@ func NewUserRepository(pool *pgxpool.Pool) core.UserRepository {
 	}
 }
 
-func (r *UserRepository) CreateUser(user *core.User) (core.User, error) {
-	// Implement the logic to create a user in the PostgreSQL database
-	return core.User{}, nil
+func (r *UserRepository) CreateUser(ctx context.Context, user *core.User) (*core.User, error) {
+	const query = `
+		INSERT INTO users (Id, Name, Email, PasswordHash, CreatedAt, UpdatedAt)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING Id, Name, Email, CreatedAt, UpdatedAt, DeletedAt`
+
+	var created core.User
+	err := r.db.QueryRow(ctx, query, user.ID, user.Name, user.Email, user.Password, user.CreatedAt, user.UpdatedAt).
+		Scan(&created.ID, &created.Name, &created.Email, &created.CreatedAt, &created.UpdatedAt, &created.DeletedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &created, nil
 }
 
-func (r *UserRepository) GetUserByID(id uuid.UUID) (core.User, error) {
-	// Implement the logic to retrieve a user by ID from the PostgreSQL database
-	return core.User{}, nil
+func (r *UserRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*core.User, error) {
+	return nil, nil
 }
 
-func (r *UserRepository) GetUserByName(name string) (core.User, error) {
-	// Implement the logic to retrieve a user by name from the PostgreSQL database
-	return core.User{}, nil
+func (r *UserRepository) GetUserByName(ctx context.Context, name string) (*core.User, error) {
+	return nil, nil
 }
 
-func (r *UserRepository) GetUserByEmail(email string) (core.User, error) {
-	// Implement the logic to retrieve a user by email from the PostgreSQL database
-	return core.User{}, nil
+func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*core.User, error) {
+	return nil, nil
 }
-func (r *UserRepository) GetAllUsers() ([]core.User, error) {
-	// Implement the logic to retrieve all users from the PostgreSQL database
-	return []core.User{}, nil
+func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) {
+	return nil, nil
 }
-func (r *UserRepository) UpdateUser(user *core.User) (core.User, error) {
-	// Implement the logic to update a user in the PostgreSQL database
-	return core.User{}, nil
+func (r *UserRepository) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
+	return nil, nil
 }
-func (r *UserRepository) DeleteUser(id uuid.UUID) error {
-	// Implement the logic to delete a user from the PostgreSQL database
+func (r *UserRepository) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return nil
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log/slog"
+
 	"github.com/andretop97/UserApiV2/src/bootstrap"
 	"github.com/andretop97/UserApiV2/src/middlewares"
 	"github.com/andretop97/UserApiV2/src/routes"
@@ -15,8 +17,11 @@ func main() {
 
 	container, err := bootstrap.NewContainer()
 	if err != nil {
+		slog.Error("Erro ao inicializar container", "error", err)
 		panic(err)
 	}
+	defer container.RedisClient.Close()
+	defer container.PgPool.Close()
 
 	router := gin.New()
 	router.Use(middlewares.SlogLogger())
