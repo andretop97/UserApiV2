@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 
 	"github.com/andretop97/UserApiV2/src/core"
 	"github.com/google/uuid"
@@ -20,7 +21,9 @@ func NewUserService(userRepository core.UserRepository) core.UserService {
 func (s *UserService) CreateUser(ctx context.Context, user *core.User) (*core.User, error) {
 	u, err := s.userRepository.GetUserByEmail(ctx, user.Email)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, core.ErrUserNotFound) {
+			return nil, err
+		}
 	}
 
 	if u != nil {

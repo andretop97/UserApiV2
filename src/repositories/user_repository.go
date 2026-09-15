@@ -36,7 +36,16 @@ func (r *UserRepository) GetUserByName(ctx context.Context, name string) (*core.
 }
 
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*core.User, error) {
-	return nil, nil
+	user, err := r.source.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+
+	if user == nil {
+		return nil, core.ErrUserNotFound
+	}
+
+	return user, nil
 }
 func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) {
 	return nil, nil
