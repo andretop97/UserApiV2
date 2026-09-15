@@ -48,3 +48,8 @@ func NewRedisEnv() (*RedisEnv, error) {
 
 	return &redisEnv, nil
 }
+
+type PepperEnv struct {
+	Version int    `env:"PEPPER_VERSION" envDefault:"0"`
+	Secret  string `env:"PEPPER_SECRETS" envDefault:"0:base64(TestePepper)"`
+}

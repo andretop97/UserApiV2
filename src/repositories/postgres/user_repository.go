@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
 	"github.com/andretop97/UserApiV2/src/core"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,6 +30,9 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *core.User) (*core
 	err := r.db.QueryRow(ctx, query, user.ID, user.Name, user.Email, user.Password, user.CreatedAt, user.UpdatedAt).
 		Scan(&created.ID, &created.Name, &created.Email, &created.CreatedAt, &created.UpdatedAt, &created.DeletedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, core.ErrUserCreationFailed
+		}
 		return nil, err
 	}
 
@@ -35,15 +40,96 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *core.User) (*core
 }
 
 func (r *UserRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*core.User, error) {
-	return nil, nil
+	const query = `
+		SELECT 
+			users.Id, 
+			users.Name, 
+			users.Email, 
+			users.CreatedAt, 
+			users.UpdatedAt, 
+			users.DeletedAt
+		FROM users 
+		WHERE 
+			users.Id = $1 
+			AND users.DeletedAt IS NULL
+		LIMIT 1`
+
+	var users core.User
+	err := r.db.QueryRow(ctx, query, id).
+		Scan(&users.ID, &users.Name, &users.Email, &users.CreatedAt, &users.UpdatedAt, &users.DeletedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, core.ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	return &users, nil
 }
 
-func (r *UserRepository) GetUserByName(ctx context.Context, name string) (*core.User, error) {
-	return nil, nil
+func (r *UserRepository) GetUserByName(ctx context.Context, name string) ([]*core.User, error) {
+	const query = `
+		SELECT 
+			users.Id, 
+			users.Name, 
+			users.Email, 
+			users.CreatedAt, 
+			users.UpdatedAt, 
+			users.DeletedAt
+		FROM users 
+		WHERE 
+			users.Name ILIKE '%' || $1 || '%'
+			AND users.DeletedAt IS NULL`
+
+	rows, err := r.db.Query(ctx, query, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*core.User
+	for rows.Next() {
+		var user core.User
+		err = rows.Scan(&user.ID, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, &user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, core.ErrUserNotFound
+	}
+	return users, nil
 }
 
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*core.User, error) {
-	return nil, nil
+	const query = `
+		SELECT 
+			users.Id, 
+			users.Name, 
+			users.Email, 
+			users.CreatedAt, 
+			users.UpdatedAt, 
+			users.DeletedAt
+		FROM users 
+		WHERE 
+			users.Email = $1
+			AND users.DeletedAt IS NULL
+		LIMIT 1`
+
+	var users core.User
+	err := r.db.QueryRow(ctx, query, email).
+		Scan(&users.ID, &users.Name, &users.Email, &users.CreatedAt, &users.UpdatedAt, &users.DeletedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, core.ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &users, nil
 }
 func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) {
 	return nil, nil

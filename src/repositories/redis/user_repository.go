@@ -26,7 +26,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*core.U
 	return nil, nil
 }
 
-func (r *UserRepository) GetUserByName(ctx context.Context, name string) (*core.User, error) {
+func (r *UserRepository) GetUserByName(ctx context.Context, name string) ([]*core.User, error) {
 	return nil, nil
 }
 
