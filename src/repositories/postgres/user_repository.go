@@ -93,17 +93,8 @@ func (r *UserRepository) GetUserByName(ctx context.Context, name string) ([]*cor
 		return nil, fmt.Errorf("get user by name: %w", err)
 	}
 	defer rows.Close()
-
-	var users []*core.User
-	for rows.Next() {
-		var user core.User
-		err = rows.Scan(&user.ID, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt)
-		if err != nil {
-			return nil, fmt.Errorf("get user by name: %w", err)
-		}
-		users = append(users, &user)
-	}
-	if err := rows.Err(); err != nil {
+	users, err := scanUsers(rows)
+	if err != nil {
 		return nil, fmt.Errorf("get user by name: %w", err)
 	}
 	if len(users) == 0 {
@@ -139,11 +130,52 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*cor
 	return &users, nil
 }
 func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) {
-	return nil, nil
+	const query = `
+		SELECT 
+			users.Id, 
+			users.Name, 
+			users.Email, 
+			users.CreatedAt, 
+			users.UpdatedAt, 
+			users.DeletedAt
+		FROM users 
+		WHERE 
+			users.DeletedAt IS NULL`
+
+	rows, err := r.db.Query(ctx, query)
+
+	if err != nil {
+		return nil, fmt.Errorf("get all users: %w", err)
+	}
+	defer rows.Close()
+
+	users, err := scanUsers(rows)
+	if err != nil {
+		return nil, fmt.Errorf("get all users: %w", err)
+	}
+
+	return users, nil
 }
 func (r *UserRepository) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
 	return nil, nil
 }
 func (r *UserRepository) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return nil
+}
+
+func scanUsers(rows pgx.Rows) ([]*core.User, error) {
+	users := make([]*core.User, 0)
+	for rows.Next() {
+		var user core.User
+		err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, &user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scan users: %w", err)
+	}
+
+	return users, nil
 }

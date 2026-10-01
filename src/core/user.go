@@ -10,7 +10,7 @@ type User struct {
 	ID            uuid.UUID
 	Name          string
 	Email         string
-	Password      string
+	Password      string `json:"-"`
 	PepperVersion int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time

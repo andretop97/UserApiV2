@@ -48,7 +48,11 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*cor
 	return user, nil
 }
 func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) {
-	return nil, nil
+	users, err := r.source.GetAllUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 func (r *UserRepository) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
 	return nil, nil
