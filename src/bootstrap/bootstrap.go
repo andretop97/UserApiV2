@@ -9,6 +9,7 @@ import (
 	"github.com/andretop97/UserApiV2/src/repositories/postgres"
 	"github.com/andretop97/UserApiV2/src/repositories/redis"
 	"github.com/andretop97/UserApiV2/src/routes"
+	"github.com/andretop97/UserApiV2/src/security"
 	"github.com/andretop97/UserApiV2/src/services"
 	"github.com/andretop97/UserApiV2/src/utils"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,7 +63,22 @@ func NewContainer() (*Container, error) {
 
 	userRepository := repositories.NewUserRepository(redisRepository, postgresRepository)
 
-	userService := services.NewUserService(userRepository)
+	pepperConfig, err := utils.NewPepperEnv()
+	if err != nil {
+		return nil, err
+	}
+	pepperProvider, err := security.NewPepperProvider(pepperConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	argonEnv, err := utils.NewArgon2Env()
+	if err != nil {
+		return nil, err
+	}
+	argonConfig := security.NewArgon2Params(argonEnv)
+	passwordEncryption := security.NewPasswordEncryption(argonConfig, pepperProvider)
+	userService := services.NewUserService(userRepository, passwordEncryption)
 
 	controllers := &routes.Controllers{
 		User: controllers.NewUserController(userService),

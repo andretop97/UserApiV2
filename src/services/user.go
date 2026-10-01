@@ -9,12 +9,14 @@ import (
 )
 
 type UserService struct {
-	userRepository core.UserRepository
+	userRepository     core.UserRepository
+	passwordEncryption core.PasswordEncryption
 }
 
-func NewUserService(userRepository core.UserRepository) core.UserService {
+func NewUserService(userRepository core.UserRepository, passwordEncryption core.PasswordEncryption) core.UserService {
 	return &UserService{
-		userRepository: userRepository,
+		userRepository:     userRepository,
+		passwordEncryption: passwordEncryption,
 	}
 }
 
@@ -25,10 +27,17 @@ func (s *UserService) CreateUser(ctx context.Context, user *core.User) (*core.Us
 			return nil, err
 		}
 	}
-
 	if u != nil {
 		return nil, core.ErrEmailAlreadyExists
 	}
+
+	hashedPassword, pepperVersion, err := s.passwordEncryption.Hash(user.Password)
+	if err != nil {
+		return nil, err
+	}
+
+	user.Password = hashedPassword
+	user.PepperVersion = pepperVersion
 
 	createdUser, err := s.userRepository.CreateUser(ctx, user)
 

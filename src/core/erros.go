@@ -1,11 +1,19 @@
 package core
 
-import "errors"
+import "net/http"
+
+type DomainError struct {
+	Code    string
+	Status  int
+	message string
+}
+
+func (e *DomainError) Error() string { return e.message }
 
 var (
-	ErrUserCreationFailed = errors.New("creation failed")
-	ErrBadRequest         = errors.New("bad request")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrEmailAlreadyExists = errors.New("email already registered")
-	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrUserCreationFailed = &DomainError{Code: "USER_CREATION_FAILED", Status: http.StatusInternalServerError, message: "creation failed"}
+	ErrBadRequest         = &DomainError{Code: "BAD_REQUEST", Status: http.StatusBadRequest, message: "bad request"}
+	ErrUserNotFound       = &DomainError{Code: "USER_NOT_FOUND", Status: http.StatusNotFound, message: "user not found"}
+	ErrEmailAlreadyExists = &DomainError{Code: "EMAIL_ALREADY_EXISTS", Status: http.StatusConflict, message: "email already registered"}
+	ErrInvalidCredentials = &DomainError{Code: "INVALID_CREDENTIALS", Status: http.StatusUnauthorized, message: "invalid email or password"}
 )

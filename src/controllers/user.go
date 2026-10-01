@@ -23,7 +23,7 @@ func NewUserController(userService core.UserService) *UserController {
 func (uc *UserController) CreateUser(c *gin.Context) {
 	var user dto.CreateUserRequest
 	if err := c.ShouldBind(&user); err != nil {
-		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, err))
+		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, validationErrorMessage(err)))
 		return
 	}
 	createdUser, err := uc.userService.CreateUser(c.Request.Context(), user.ToUser())
@@ -95,7 +95,7 @@ func (uc *UserController) GetAllUsers(c *gin.Context) {
 func (uc *UserController) UpdateUser(c *gin.Context) {
 	var user dto.UpdateUserRequest
 	if err := c.ShouldBind(&user); err != nil {
-		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, err))
+		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, validationErrorMessage(err)))
 		return
 	}
 	updatedUser, err := uc.userService.UpdateUser(c.Request.Context(), user.ToUser())
@@ -125,7 +125,7 @@ func (uc *UserController) DeleteUser(c *gin.Context) {
 func (uc *UserController) LoginUser(c *gin.Context) {
 	var user dto.LoginRequest
 	if err := c.ShouldBind(&user); err != nil {
-		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, err))
+		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, validationErrorMessage(err)))
 		return
 	}
 	token, err := uc.userService.LoginUser(c.Request.Context(), user.Email, user.Password)

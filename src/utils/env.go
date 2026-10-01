@@ -51,5 +51,29 @@ func NewRedisEnv() (*RedisEnv, error) {
 
 type PepperEnv struct {
 	Version int    `env:"PEPPER_VERSION" envDefault:"0"`
-	Secret  string `env:"PEPPER_SECRETS" envDefault:"0:base64(TestePepper)"`
+	Secret  string `env:"PEPPER_SECRETS" envDefault:"0:VGVzdGVQZXBwZXI="`
+}
+
+func NewPepperEnv() (*PepperEnv, error) {
+	pepperEnv, err := env.ParseAs[PepperEnv]()
+	if err != nil {
+		return nil, err
+	}
+	return &pepperEnv, nil
+}
+
+type Argon2Env struct {
+	Memory      uint32 `env:"ARGON2_MEMORY" envDefault:"65536"`
+	Iterations  uint32 `env:"ARGON2_ITERATIONS" envDefault:"3"`
+	Parallelism uint8  `env:"ARGON2_PARALLELISM" envDefault:"2"`
+	SaltLength  uint32 `env:"ARGON2_SALT_LENGTH" envDefault:"16"`
+	KeyLength   uint32 `env:"ARGON2_KEY_LENGTH" envDefault:"32"`
+}
+
+func NewArgon2Env() (*Argon2Env, error) {
+	argon2Env, err := env.ParseAs[Argon2Env]()
+	if err != nil {
+		return nil, err
+	}
+	return &argon2Env, nil
 }
