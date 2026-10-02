@@ -59,7 +59,7 @@ func NewContainer() (*Container, error) {
 
 	postgresRepository := postgres.NewUserRepository(pgxPool)
 
-	redisRepository := redis.NewUserRepository(redisClient)
+	redisRepository := redis.NewUserCache(redisClient)
 
 	userRepository := repositories.NewUserRepository(redisRepository, postgresRepository)
 

@@ -85,10 +85,10 @@ func (r *UserRepository) GetUserByName(ctx context.Context, name string) ([]*cor
 			users.DeletedAt
 		FROM users 
 		WHERE 
-			users.Name ILIKE '%' || $1 || '%'
+			users.Name ILIKE '%' || $1 || '%' ESCAPE '\'
 			AND users.DeletedAt IS NULL`
 
-	rows, err := r.db.Query(ctx, query, name)
+	rows, err := r.db.Query(ctx, query, escapeLike(name))
 	if err != nil {
 		return nil, fmt.Errorf("get user by name: %w", err)
 	}
@@ -96,9 +96,6 @@ func (r *UserRepository) GetUserByName(ctx context.Context, name string) ([]*cor
 	users, err := scanUsers(rows)
 	if err != nil {
 		return nil, fmt.Errorf("get user by name: %w", err)
-	}
-	if len(users) == 0 {
-		return nil, core.ErrUserNotFound
 	}
 	return users, nil
 }
@@ -159,9 +156,39 @@ func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) 
 	return users, nil
 }
 func (r *UserRepository) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
-	return nil, nil
+	query := `
+		UPDATE users
+		SET Name = COALESCE(NULLIF($1, ''), Name), Email = COALESCE(NULLIF($2, ''), Email), UpdatedAt = NOW()
+		WHERE Id = $3 AND DeletedAt IS NULL
+		RETURNING Id, Name, Email, CreatedAt, UpdatedAt, DeletedAt`
+
+	userUpdated := &core.User{}
+	err := r.db.QueryRow(ctx, query, user.Name, user.Email, user.ID).
+		Scan(&userUpdated.ID, &userUpdated.Name, &userUpdated.Email, &userUpdated.CreatedAt, &userUpdated.UpdatedAt, &userUpdated.DeletedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, core.ErrUserNotFound
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return nil, core.ErrEmailAlreadyExists
+		}
+		return nil, fmt.Errorf("update user: %w", err)
+	}
+	return userUpdated, nil
 }
 func (r *UserRepository) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	query := `
+		UPDATE users
+		SET DeletedAt = NOW()
+		WHERE Id = $1 AND DeletedAt IS NULL`
+	tag, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return core.ErrUserNotFound
+	}
 	return nil
 }
 

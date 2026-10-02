@@ -54,8 +54,11 @@ func (s *UserService) CreateUser(ctx context.Context, user *core.User) (*core.Us
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id uuid.UUID) (*core.User, error) {
-	// Implement the logic to retrieve a user by ID
-	return nil, nil
+	user, err := s.userRepository.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 func (s *UserService) GetUserByName(ctx context.Context, name string) (*core.User, error) {
