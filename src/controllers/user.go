@@ -121,19 +121,3 @@ func (uc *UserController) DeleteUser(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
 }
-
-func (uc *UserController) LoginUser(c *gin.Context) {
-	var user dto.LoginRequest
-	if err := c.ShouldBind(&user); err != nil {
-		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, validationErrorMessage(err)))
-		return
-	}
-	token, err := uc.userService.LoginUser(c.Request.Context(), user.Email, user.Password)
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	loginResponse := &dto.LoginResponse{}
-	loginResponse.FromUser(token)
-	c.JSON(http.StatusOK, loginResponse)
-}

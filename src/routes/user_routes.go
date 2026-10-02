@@ -14,5 +14,4 @@ func UserRoutes(routes *gin.RouterGroup, userController *controllers.UserControl
 	user.POST("/", userController.CreateUser)
 	user.PUT("/:id", userController.UpdateUser)
 	user.DELETE("/:id", userController.DeleteUser)
-	user.POST("/login", userController.LoginUser)
 }

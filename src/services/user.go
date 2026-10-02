@@ -81,7 +81,3 @@ func (s *UserService) UpdateUser(ctx context.Context, user *core.User) (*core.Us
 func (s *UserService) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
-
-func (s *UserService) LoginUser(ctx context.Context, email string, password string) (*string, error) {
-	return nil, nil
-}

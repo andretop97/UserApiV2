@@ -109,6 +109,8 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*cor
 			users.Id, 
 			users.Name, 
 			users.Email, 
+			users.PasswordHash,
+			users.PepperVersion,
 			users.CreatedAt, 
 			users.UpdatedAt, 
 			users.DeletedAt
@@ -120,7 +122,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*cor
 
 	var users core.User
 	err := r.db.QueryRow(ctx, query, email).
-		Scan(&users.ID, &users.Name, &users.Email, &users.CreatedAt, &users.UpdatedAt, &users.DeletedAt)
+		Scan(&users.ID, &users.Name, &users.Email, &users.Password, &users.PepperVersion, &users.CreatedAt, &users.UpdatedAt, &users.DeletedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, core.ErrUserNotFound
