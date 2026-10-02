@@ -61,12 +61,23 @@ func (s *UserService) GetUserByID(ctx context.Context, id uuid.UUID) (*core.User
 	return user, nil
 }
 
-func (s *UserService) GetUserByName(ctx context.Context, name string) (*core.User, error) {
-	return nil, nil
+func (s *UserService) GetUsersByName(ctx context.Context, name string) ([]*core.User, error) {
+	users, err := s.userRepository.GetUsersByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*core.User, error) {
-	return nil, nil
+	user, err := s.userRepository.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, core.ErrUserNotFound
+	}
+	return user, nil
 }
 
 func (s *UserService) GetAllUsers(ctx context.Context) ([]*core.User, error) {

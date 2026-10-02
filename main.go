@@ -20,8 +20,11 @@ func main() {
 		slog.Error("Erro ao inicializar container", "error", err)
 		panic(err)
 	}
-	defer container.RedisClient.Close()
-	defer container.PgPool.Close()
+	defer func() {
+		if err := container.Close(); err != nil {
+			slog.Error("Erro ao fechar container", "error", err)
+		}
+	}()
 
 	router := gin.New()
 	router.Use(middlewares.SlogLogger())

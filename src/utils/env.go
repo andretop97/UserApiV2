@@ -2,6 +2,7 @@ package utils
 
 import (
 	"net/url"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -47,6 +48,32 @@ func NewRedisEnv() (*RedisEnv, error) {
 	}
 
 	return &redisEnv, nil
+}
+
+type CacheEnv struct {
+	UserTTL time.Duration `env:"CACHE_USER_TTL" envDefault:"10m"`
+}
+
+func NewCacheEnv() (*CacheEnv, error) {
+	cacheEnv, err := env.ParseAs[CacheEnv]()
+	if err != nil {
+		return nil, err
+	}
+	return &cacheEnv, nil
+}
+
+type AuthEnv struct {
+	LoginTokenTTL      time.Duration `env:"LOGIN_TOKEN_TTL" envDefault:"10m"`
+	SessionIdleTTL     time.Duration `env:"SESSION_IDLE_TTL" envDefault:"24h"`
+	SessionAbsoluteTTL time.Duration `env:"SESSION_ABSOLUTE_TTL" envDefault:"72h"`
+}
+
+func NewAuthEnv() (*AuthEnv, error) {
+	authEnv, err := env.ParseAs[AuthEnv]()
+	if err != nil {
+		return nil, err
+	}
+	return &authEnv, nil
 }
 
 type PepperEnv struct {

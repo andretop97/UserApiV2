@@ -247,7 +247,7 @@ func TestGetUserByEmail(t *testing.T) {
 	})
 }
 
-func TestGetUserByName(t *testing.T) {
+func TestGetUsersByName(t *testing.T) {
 	ctx := context.Background()
 
 	seed := func(t *testing.T, repo core.UserRepository) {
@@ -264,7 +264,7 @@ func TestGetUserByName(t *testing.T) {
 		repo := setup(t)
 		seed(t, repo)
 
-		got, err := repo.GetUserByName(ctx, "JO")
+		got, err := repo.GetUsersByName(ctx, "JO")
 
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{"João Silva", "Maria Joana"}, names(got))
@@ -274,7 +274,7 @@ func TestGetUserByName(t *testing.T) {
 		repo := setup(t)
 		seed(t, repo)
 
-		got, err := repo.GetUserByName(ctx, "%")
+		got, err := repo.GetUsersByName(ctx, "%")
 
 		require.NoError(t, err)
 		assert.Equal(t, []string{"100% Dev"}, names(got))
@@ -284,7 +284,7 @@ func TestGetUserByName(t *testing.T) {
 		repo := setup(t)
 		seed(t, repo)
 
-		got, err := repo.GetUserByName(ctx, "a_m")
+		got, err := repo.GetUsersByName(ctx, "a_m")
 
 		require.NoError(t, err)
 		assert.Equal(t, []string{"Ana_Maria"}, names(got))
@@ -294,7 +294,7 @@ func TestGetUserByName(t *testing.T) {
 		repo := setup(t)
 		seed(t, repo)
 
-		got, err := repo.GetUserByName(ctx, `\`)
+		got, err := repo.GetUsersByName(ctx, `\`)
 
 		require.NoError(t, err)
 		assert.Equal(t, []string{`C:\dir`}, names(got))
@@ -306,7 +306,7 @@ func TestGetUserByName(t *testing.T) {
 		deleted := createUser(t, repo, "Pedro Deletado", "pedro2@example.com")
 		deleteUser(t, repo, deleted.ID)
 
-		got, err := repo.GetUserByName(ctx, "pedro")
+		got, err := repo.GetUsersByName(ctx, "pedro")
 
 		require.NoError(t, err)
 		require.Len(t, got, 1)
@@ -317,7 +317,7 @@ func TestGetUserByName(t *testing.T) {
 		repo := setup(t)
 		seed(t, repo)
 
-		got, err := repo.GetUserByName(ctx, "inexistente")
+		got, err := repo.GetUsersByName(ctx, "inexistente")
 
 		require.NoError(t, err)
 		assert.NotNil(t, got)
@@ -453,5 +453,76 @@ func TestDeleteUser(t *testing.T) {
 		err := repo.DeleteUser(ctx, created.ID)
 
 		assert.ErrorIs(t, err, core.ErrUserNotFound)
+	})
+}
+
+// Falhas de infraestrutura (conexão, timeout, cancelamento) não podem virar erro de domínio:
+// um GetUserByID que transformasse queda de banco em ErrUserNotFound responderia 404 em vez de 500.
+// Um contexto já cancelado faz toda query falhar antes de chegar ao banco.
+func TestInfrastructureErrors(t *testing.T) {
+	repo := setup(t)
+	existing := createUser(t, repo, "João", "joao@example.com")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	assertInfraError := func(t *testing.T, err error, prefix string) {
+		t.Helper()
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.NotErrorIs(t, err, core.ErrUserNotFound)
+		assert.NotErrorIs(t, err, core.ErrEmailAlreadyExists)
+		assert.True(t, strings.HasPrefix(err.Error(), prefix), "erro deve indicar a operação: %q", err.Error())
+	}
+
+	t.Run("CreateUser", func(t *testing.T) {
+		got, err := repo.CreateUser(ctx, &core.User{Name: "Novo", Email: "novo@example.com", Password: "x", PepperVersion: 1})
+		assert.Nil(t, got)
+		assertInfraError(t, err, "create user:")
+	})
+
+	t.Run("GetUserByID", func(t *testing.T) {
+		got, err := repo.GetUserByID(ctx, existing.ID)
+		assert.Nil(t, got)
+		assertInfraError(t, err, "get user by id:")
+	})
+
+	t.Run("GetUsersByName", func(t *testing.T) {
+		got, err := repo.GetUsersByName(ctx, "jo")
+		assert.Nil(t, got)
+		assertInfraError(t, err, "get user by name:")
+	})
+
+	t.Run("GetUserByEmail", func(t *testing.T) {
+		got, err := repo.GetUserByEmail(ctx, existing.Email)
+		assert.Nil(t, got)
+		assertInfraError(t, err, "get user by email:")
+	})
+
+	t.Run("GetAllUsers", func(t *testing.T) {
+		got, err := repo.GetAllUsers(ctx)
+		assert.Nil(t, got)
+		assertInfraError(t, err, "get all users:")
+	})
+
+	t.Run("UpdateUser", func(t *testing.T) {
+		got, err := repo.UpdateUser(ctx, &core.User{ID: existing.ID, Name: "Outro"})
+		assert.Nil(t, got)
+		assertInfraError(t, err, "update user:")
+	})
+
+	t.Run("DeleteUser", func(t *testing.T) {
+		err := repo.DeleteUser(ctx, existing.ID)
+		assertInfraError(t, err, "delete user:")
+	})
+
+	t.Run("nenhuma operação foi aplicada", func(t *testing.T) {
+		got, err := repo.GetUserByID(context.Background(), existing.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "João", got.Name)
+
+		all, err := repo.GetAllUsers(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, all, 1)
 	})
 }

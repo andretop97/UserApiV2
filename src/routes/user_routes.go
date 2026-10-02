@@ -9,7 +9,7 @@ func UserRoutes(routes *gin.RouterGroup, userController *controllers.UserControl
 	user := routes.Group("/user")
 	user.GET("/", userController.GetAllUsers)
 	user.GET("/:id", userController.GetUserByID)
-	user.GET("/name/:name", userController.GetUserByName)
+	user.GET("/name/:name", userController.GetUsersByName)
 	user.GET("/email/:email", userController.GetUserByEmail)
 	user.POST("/", userController.CreateUser)
 	user.PUT("/:id", userController.UpdateUser)

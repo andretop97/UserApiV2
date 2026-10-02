@@ -2,6 +2,8 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 
 	"github.com/andretop97/UserApiV2/src/controllers"
 	"github.com/andretop97/UserApiV2/src/migrations"
@@ -18,56 +20,34 @@ import (
 
 type Container struct {
 	Controllers *routes.Controllers
-	PgPool      *pgxpool.Pool
-	RedisClient *rdb.Client
+	closers     []func() error
 }
 
-func NewContainer() (*Container, error) {
-	redisConfig, err := utils.NewRedisEnv()
-	if err != nil {
-		return nil, err
+func (c *Container) Close() error {
+	var err error
+	for i := len(c.closers) - 1; i >= 0; i-- {
+		err = errors.Join(err, c.closers[i]())
 	}
-	redisClient := rdb.NewClient(&rdb.Options{
-		Addr:     redisConfig.Host + ":" + redisConfig.Port,
-		Password: redisConfig.Password,
-		DB:       redisConfig.Database,
-	})
+	return err
+}
 
-	healthCheck := redis.NewHealthCheck(redisClient)
-	err = healthCheck.HandShake()
+func NewContainer() (container *Container, err error) {
+	redisConfig, err := utils.NewRedisEnv()
 	if err != nil {
 		return nil, err
 	}
 
 	postgresqlConfig, err := utils.NewPostgresqlEnv()
 	if err != nil {
-		redisClient.Close()
 		return nil, err
 	}
 
-	err = migrations.AutoMigrate()
+	cacheEnv, err := utils.NewCacheEnv()
 	if err != nil {
-		redisClient.Close()
 		return nil, err
 	}
-
-	pgxPool, err := pgxpool.New(context.Background(), postgresqlConfig.ConnectionString())
-	if err != nil {
-		redisClient.Close()
-		return nil, err
-	}
-
-	postgresRepository := postgres.NewUserRepository(pgxPool)
-
-	redisRepository := redis.NewUserCache(redisClient)
-
-	userRepository := repositories.NewUserRepository(redisRepository, postgresRepository)
 
 	pepperConfig, err := utils.NewPepperEnv()
-	if err != nil {
-		return nil, err
-	}
-	pepperProvider, err := security.NewPepperProvider(pepperConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -76,18 +56,66 @@ func NewContainer() (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	pepperProvider, err := security.NewPepperProvider(pepperConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	var closers []func() error
+
+	defer func() {
+		if err != nil {
+			for i := len(closers) - 1; i >= 0; i-- { // ordem inversa
+				err = errors.Join(err, closers[i]())
+			}
+		}
+	}()
+
+	redisClient := rdb.NewClient(&rdb.Options{
+		Addr:     redisConfig.Host + ":" + redisConfig.Port,
+		Password: redisConfig.Password,
+		DB:       redisConfig.Database,
+	})
+	closers = append(closers, redisClient.Close)
+
+	healthCheck := redis.NewHealthCheck(redisClient)
+	err = healthCheck.HandShake()
+	if err != nil {
+		return nil, err
+	}
+
+	err = migrations.AutoMigrate()
+	if err != nil {
+		return nil, err
+	}
+
+	pgxPool, err := pgxpool.New(context.Background(), postgresqlConfig.ConnectionString())
+	if err != nil {
+		return nil, err
+	}
+	closers = append(closers, func() error { pgxPool.Close(); return nil })
+
+	postgresRepository := postgres.NewUserRepository(pgxPool)
+
+	redisRepository, err := redis.NewUserCache(redisClient, cacheEnv.UserTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	userRepository := repositories.NewUserRepository(redisRepository, postgresRepository, slog.Default())
+
 	argonConfig := security.NewArgon2Params(argonEnv)
 	passwordEncryption := security.NewPasswordEncryption(argonConfig, pepperProvider)
 	userService := services.NewUserService(userRepository, passwordEncryption)
 
-	controllers := &routes.Controllers{
+	routerControllers := &routes.Controllers{
 		User: controllers.NewUserController(userService),
 	}
 
 	return &Container{
-		Controllers: controllers,
-		PgPool:      pgxPool,
-		RedisClient: redisClient,
+		Controllers: routerControllers,
+		closers:     closers,
 	}, nil
 
 }

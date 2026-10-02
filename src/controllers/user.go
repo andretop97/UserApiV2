@@ -53,16 +53,20 @@ func (uc *UserController) GetUserByID(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func (uc *UserController) GetUserByName(c *gin.Context) {
+func (uc *UserController) GetUsersByName(c *gin.Context) {
 	var nameParam string = c.Param("name")
-	user, err := uc.userService.GetUserByName(c.Request.Context(), nameParam)
+	users, err := uc.userService.GetUsersByName(c.Request.Context(), nameParam)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	response := &dto.GetUserResponse{}
-	response.FromUser(user)
-	c.JSON(http.StatusOK, response)
+	var userResponses []dto.GetUserResponse
+	for _, user := range users {
+		response := &dto.GetUserResponse{}
+		response.FromUser(user)
+		userResponses = append(userResponses, *response)
+	}
+	c.JSON(http.StatusOK, userResponses)
 }
 
 func (uc *UserController) GetUserByEmail(c *gin.Context) {
