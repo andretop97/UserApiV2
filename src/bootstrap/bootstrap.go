@@ -109,8 +109,11 @@ func NewContainer() (container *Container, err error) {
 	passwordEncryption := security.NewPasswordEncryption(argonConfig, pepperProvider)
 	userService := services.NewUserService(userRepository, passwordEncryption)
 
+	authService := services.NewAuthService(userRepository, passwordEncryption)
+
 	routerControllers := &routes.Controllers{
 		User: controllers.NewUserController(userService),
+		Auth: controllers.NewAuthController(authService),
 	}
 
 	return &Container{
