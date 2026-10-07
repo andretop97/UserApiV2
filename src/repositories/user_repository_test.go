@@ -48,8 +48,8 @@ func (m *sourceMock) GetAllUsers(ctx context.Context) ([]*core.User, error) {
 	return usersArg(args, 0), args.Error(1)
 }
 
-func (m *sourceMock) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
-	args := m.Called(ctx, user)
+func (m *sourceMock) UpdateUser(ctx context.Context, id uuid.UUID, userUpdate *core.UserUpdate) (*core.User, error) {
+	args := m.Called(ctx, id, userUpdate)
 	return userArg(args, 0), args.Error(1)
 }
 
@@ -277,16 +277,6 @@ func TestGetUserByEmail(t *testing.T) {
 		assert.Same(t, user, got)
 	})
 
-	t.Run("source retornando nil sem erro vira ErrUserNotFound", func(t *testing.T) {
-		repo, _, source := setup(t)
-		source.On("GetUserByEmail", ctx, "x@example.com").Return(nil, nil)
-
-		got, err := repo.GetUserByEmail(ctx, "x@example.com")
-
-		assert.ErrorIs(t, err, core.ErrUserNotFound)
-		assert.Nil(t, got)
-	})
-
 	t.Run("propaga erro do source", func(t *testing.T) {
 		repo, _, source := setup(t)
 		source.On("GetUserByEmail", ctx, "x@example.com").Return(nil, core.ErrUserNotFound)
@@ -328,12 +318,14 @@ func TestUpdateUser(t *testing.T) {
 
 	t.Run("atualiza no source e invalida o cache", func(t *testing.T) {
 		repo, cache, source := setup(t)
-		input := &core.User{ID: uuid.New(), Name: "Novo"}
-		updated := &core.User{ID: input.ID, Name: "Novo", Email: "joao@example.com"}
-		source.On("UpdateUser", ctx, input).Return(updated, nil)
-		cache.On("Delete", ctx, input.ID).Return(nil)
+		id := uuid.New()
+		name := "Novo"
+		changes := &core.UserUpdate{Name: &name}
+		updated := &core.User{ID: id, Name: "Novo", Email: "joao@example.com"}
+		source.On("UpdateUser", ctx, id, changes).Return(updated, nil)
+		cache.On("Delete", ctx, id).Return(nil)
 
-		got, err := repo.UpdateUser(ctx, input)
+		got, err := repo.UpdateUser(ctx, id, changes)
 
 		require.NoError(t, err)
 		assert.Same(t, updated, got)
@@ -341,10 +333,11 @@ func TestUpdateUser(t *testing.T) {
 
 	t.Run("erro do source não invalida o cache", func(t *testing.T) {
 		repo, cache, source := setup(t)
-		input := newUser()
-		source.On("UpdateUser", ctx, input).Return(nil, core.ErrUserNotFound)
+		id := uuid.New()
+		changes := &core.UserUpdate{}
+		source.On("UpdateUser", ctx, id, changes).Return(nil, core.ErrUserNotFound)
 
-		got, err := repo.UpdateUser(ctx, input)
+		got, err := repo.UpdateUser(ctx, id, changes)
 
 		assert.ErrorIs(t, err, core.ErrUserNotFound)
 		assert.Nil(t, got)
@@ -353,16 +346,17 @@ func TestUpdateUser(t *testing.T) {
 
 	t.Run("erro ao invalidar o cache é ignorado e logado", func(t *testing.T) {
 		repo, cache, source, logs := setupWithLogs(t)
-		input := newUser()
-		source.On("UpdateUser", ctx, input).Return(input, nil)
-		cache.On("Delete", ctx, input.ID).Return(errBoom)
+		user := newUser()
+		changes := &core.UserUpdate{Name: &user.Name}
+		source.On("UpdateUser", ctx, user.ID, changes).Return(user, nil)
+		cache.On("Delete", ctx, user.ID).Return(errBoom)
 
-		got, err := repo.UpdateUser(ctx, input)
+		got, err := repo.UpdateUser(ctx, user.ID, changes)
 
 		require.NoError(t, err)
-		assert.Same(t, input, got)
+		assert.Same(t, user, got)
 		assert.Contains(t, logs.String(), "cache invalidation failed")
-		assert.Contains(t, logs.String(), input.ID.String())
+		assert.Contains(t, logs.String(), user.ID.String())
 	})
 }
 

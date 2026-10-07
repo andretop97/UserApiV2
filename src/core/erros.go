@@ -17,4 +17,5 @@ var (
 	ErrEmailAlreadyExists = &DomainError{Code: "EMAIL_ALREADY_EXISTS", Status: http.StatusConflict, message: "email already registered"}
 	ErrInvalidCredentials = &DomainError{Code: "INVALID_CREDENTIALS", Status: http.StatusUnauthorized, message: "invalid email or password"}
 	ErrTokenExpired       = &DomainError{Code: "TOKEN_EXPIRED", Status: http.StatusUnauthorized, message: "token expired"}
+	ErrTokenInvalid       = &DomainError{Code: "TOKEN_INVALID", Status: http.StatusUnauthorized, message: "token invalid"}
 )

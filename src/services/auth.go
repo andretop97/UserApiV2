@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 
 	"github.com/andretop97/UserApiV2/src/core"
 )
@@ -31,12 +32,16 @@ func NewAuthService(
 }
 
 func (as *AuthService) Login(ctx context.Context, email, password string) (*core.LoginResult, error) {
+	email = core.NormalizeEmail(email)
 	user, err := as.userRepository.GetUserByEmail(ctx, email)
 	if err != nil {
+		if errors.Is(err, core.ErrUserNotFound) {
+			return nil, core.ErrInvalidCredentials
+		}
 		return nil, err
 	}
 	if user == nil {
-		return nil, core.ErrUserNotFound
+		return nil, core.ErrInvalidCredentials
 	}
 	isMatch, err := as.passwordEncryption.Verify(password, user.Password, user.PepperVersion)
 	if err != nil {
@@ -51,7 +56,7 @@ func (as *AuthService) Login(ctx context.Context, email, password string) (*core
 		return nil, err
 	}
 
-	err = as.authRepository.SetTemporaryToken(ctx, user.ID, token)
+	err = as.authRepository.SetTemporaryToken(ctx, user.ID, token, as.mfaTokens.TTL())
 	if err != nil {
 		return nil, err
 	}

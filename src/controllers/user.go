@@ -97,12 +97,19 @@ func (uc *UserController) GetAllUsers(c *gin.Context) {
 }
 
 func (uc *UserController) UpdateUser(c *gin.Context) {
-	var user dto.UpdateUserRequest
-	if err := c.ShouldBind(&user); err != nil {
+	var idParam string = c.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, err))
+		return
+	}
+	var userRequest dto.UpdateUserRequest
+	if err := c.ShouldBind(&userRequest); err != nil {
 		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, validationErrorMessage(err)))
 		return
 	}
-	updatedUser, err := uc.userService.UpdateUser(c.Request.Context(), user.ToUser())
+	user := userRequest.ToUserUpdate()
+	updatedUser, err := uc.userService.UpdateUser(c.Request.Context(), id, user)
 	if err != nil {
 		respondError(c, err)
 		return

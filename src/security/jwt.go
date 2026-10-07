@@ -68,7 +68,7 @@ func (jp *JwtProvider[T]) ValidateToken(token string) (T, error) {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return zero, core.ErrTokenExpired
 		}
-		return zero, err
+		return zero, fmt.Errorf("%w: %w", core.ErrTokenInvalid, err)
 	}
 	return claims.Data, nil
 }

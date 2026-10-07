@@ -8,13 +8,15 @@ type AuthLoginRequest struct {
 }
 
 type AuthLoginResponse struct {
-	Token     string `json:"token"`
+	Status    string `json:"status"`
+	Token     string `json:"mfa_token"`
 	TokenType string `json:"token_type"`
 	ExpiresIn int    `json:"expires_in"`
 	NextStep  string `json:"next_step"`
 }
 
 func (r *AuthLoginResponse) FromLogin(login *core.LoginResult) {
+	r.Status = "mfa_required"
 	r.Token = login.Token
 	r.TokenType = "Bearer"
 	r.ExpiresIn = int(login.ExpiresIn.Seconds())

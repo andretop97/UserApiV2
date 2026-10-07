@@ -355,11 +355,11 @@ func TestGetAllUsers(t *testing.T) {
 func TestUpdateUser(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("atualiza nome e mantém e-mail quando vazio", func(t *testing.T) {
+	t.Run("atualiza só o nome e mantém o e-mail", func(t *testing.T) {
 		repo := setup(t)
 		created := createUser(t, repo, "João", "joao@example.com")
 
-		updated, err := repo.UpdateUser(ctx, &core.User{ID: created.ID, Name: "João Atualizado"})
+		updated, err := repo.UpdateUser(ctx, created.ID, &core.UserUpdate{Name: ptr("João Atualizado")})
 
 		require.NoError(t, err)
 		assert.Equal(t, created.ID, updated.ID)
@@ -369,22 +369,36 @@ func TestUpdateUser(t *testing.T) {
 		assert.True(t, updated.UpdatedAt.After(created.UpdatedAt))
 	})
 
-	t.Run("atualiza e-mail e mantém nome quando vazio", func(t *testing.T) {
+	t.Run("atualiza só o e-mail e mantém o nome", func(t *testing.T) {
 		repo := setup(t)
 		created := createUser(t, repo, "João", "joao@example.com")
 
-		updated, err := repo.UpdateUser(ctx, &core.User{ID: created.ID, Email: "novo@example.com"})
+		updated, err := repo.UpdateUser(ctx, created.ID, &core.UserUpdate{Email: ptr("novo@example.com")})
 
 		require.NoError(t, err)
 		assert.Equal(t, "João", updated.Name)
 		assert.Equal(t, "novo@example.com", updated.Email)
 	})
 
+	t.Run("atualiza nome e e-mail juntos", func(t *testing.T) {
+		repo := setup(t)
+		created := createUser(t, repo, "João", "joao@example.com")
+
+		updated, err := repo.UpdateUser(ctx, created.ID, &core.UserUpdate{
+			Name:  ptr("Maria"),
+			Email: ptr("maria@example.com"),
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "Maria", updated.Name)
+		assert.Equal(t, "maria@example.com", updated.Email)
+	})
+
 	t.Run("alteração é persistida", func(t *testing.T) {
 		repo := setup(t)
 		created := createUser(t, repo, "João", "joao@example.com")
 
-		_, err := repo.UpdateUser(ctx, &core.User{ID: created.ID, Name: "Persistido"})
+		_, err := repo.UpdateUser(ctx, created.ID, &core.UserUpdate{Name: ptr("Persistido")})
 		require.NoError(t, err)
 
 		got, err := repo.GetUserByID(ctx, created.ID)
@@ -392,12 +406,24 @@ func TestUpdateUser(t *testing.T) {
 		assert.Equal(t, "Persistido", got.Name)
 	})
 
+	t.Run("update sem campos retorna ErrBadRequest sem tocar no banco", func(t *testing.T) {
+		repo := setup(t)
+		created := createUser(t, repo, "João", "joao@example.com")
+
+		_, err := repo.UpdateUser(ctx, created.ID, &core.UserUpdate{})
+
+		assert.ErrorIs(t, err, core.ErrBadRequest)
+		got, err := repo.GetUserByID(ctx, created.ID)
+		require.NoError(t, err)
+		assert.True(t, created.UpdatedAt.Equal(got.UpdatedAt))
+	})
+
 	t.Run("e-mail de outro usuário retorna ErrEmailAlreadyExists", func(t *testing.T) {
 		repo := setup(t)
 		createUser(t, repo, "João", "joao@example.com")
 		maria := createUser(t, repo, "Maria", "maria@example.com")
 
-		_, err := repo.UpdateUser(ctx, &core.User{ID: maria.ID, Email: "joao@example.com"})
+		_, err := repo.UpdateUser(ctx, maria.ID, &core.UserUpdate{Email: ptr("joao@example.com")})
 
 		assert.ErrorIs(t, err, core.ErrEmailAlreadyExists)
 	})
@@ -405,7 +431,7 @@ func TestUpdateUser(t *testing.T) {
 	t.Run("id inexistente retorna ErrUserNotFound", func(t *testing.T) {
 		repo := setup(t)
 
-		_, err := repo.UpdateUser(ctx, &core.User{ID: uuid.New(), Name: "Ninguém"})
+		_, err := repo.UpdateUser(ctx, uuid.New(), &core.UserUpdate{Name: ptr("Ninguém")})
 
 		assert.ErrorIs(t, err, core.ErrUserNotFound)
 	})
@@ -415,11 +441,13 @@ func TestUpdateUser(t *testing.T) {
 		created := createUser(t, repo, "João", "joao@example.com")
 		deleteUser(t, repo, created.ID)
 
-		_, err := repo.UpdateUser(ctx, &core.User{ID: created.ID, Name: "Ressuscitado"})
+		_, err := repo.UpdateUser(ctx, created.ID, &core.UserUpdate{Name: ptr("Ressuscitado")})
 
 		assert.ErrorIs(t, err, core.ErrUserNotFound)
 	})
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func TestDeleteUser(t *testing.T) {
 	ctx := context.Background()
@@ -506,7 +534,7 @@ func TestInfrastructureErrors(t *testing.T) {
 	})
 
 	t.Run("UpdateUser", func(t *testing.T) {
-		got, err := repo.UpdateUser(ctx, &core.User{ID: existing.ID, Name: "Outro"})
+		got, err := repo.UpdateUser(ctx, existing.ID, &core.UserUpdate{Name: ptr("Outro")})
 		assert.Nil(t, got)
 		assertInfraError(t, err, "update user:")
 	})

@@ -91,7 +91,7 @@ func unavailableCache(t *testing.T) repositories.UserCache {
 
 // cacheKey espelha o formato de chave usado pelo UserCache; atualize junto se o formato mudar.
 func cacheKey(id uuid.UUID) string {
-	return id.String()
+	return "cache:user:v1:" + id.String()
 }
 
 func newUser() *core.User {

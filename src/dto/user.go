@@ -42,9 +42,9 @@ type UpdateUserRequest struct {
 	Name string `json:"name" binding:"required"`
 }
 
-func (r *UpdateUserRequest) ToUser() *core.User {
-	return &core.User{
-		Name: r.Name,
+func (r *UpdateUserRequest) ToUserUpdate() *core.UserUpdate {
+	return &core.UserUpdate{
+		Name: &r.Name,
 	}
 }
 

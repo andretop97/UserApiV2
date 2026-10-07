@@ -56,14 +56,14 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*cor
 func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) {
 	return r.source.GetAllUsers(ctx)
 }
-func (r *UserRepository) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
-	updatedUser, err := r.source.UpdateUser(ctx, user)
+func (r *UserRepository) UpdateUser(ctx context.Context, id uuid.UUID, userUpdate *core.UserUpdate) (*core.User, error) {
+	updatedUser, err := r.source.UpdateUser(ctx, id, userUpdate)
 	if err != nil {
 		return nil, err
 	}
-	err = r.cache.Delete(ctx, user.ID)
+	err = r.cache.Delete(ctx, id)
 	if err != nil {
-		r.logger.WarnContext(ctx, "cache invalidation failed", "user_id", user.ID, "error", err)
+		r.logger.WarnContext(ctx, "cache invalidation failed", "user_id", id, "error", err)
 	}
 
 	return updatedUser, nil

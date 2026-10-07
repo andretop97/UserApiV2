@@ -22,8 +22,7 @@ func NewUserService(userRepository core.UserRepository, passwordEncryption core.
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *core.User) (*core.User, error) {
-	user.Email = strings.TrimSpace(user.Email)
-	user.Email = strings.ToLower(user.Email)
+	user.Email = core.NormalizeEmail(user.Email)
 	user.Name = strings.TrimSpace(user.Name)
 
 	u, err := s.userRepository.GetUserByEmail(ctx, user.Email)
@@ -88,10 +87,28 @@ func (s *UserService) GetAllUsers(ctx context.Context) ([]*core.User, error) {
 	return users, nil
 }
 
-func (s *UserService) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
-	return nil, nil
+func (s *UserService) UpdateUser(ctx context.Context, id uuid.UUID, userUpdate *core.UserUpdate) (*core.User, error) {
+	if userUpdate.Email != nil {
+		email := core.NormalizeEmail(*userUpdate.Email)
+		userUpdate.Email = &email
+	}
+	if userUpdate.Name != nil {
+		name := strings.TrimSpace(*userUpdate.Name)
+		userUpdate.Name = &name
+
+	}
+
+	user, err := s.userRepository.UpdateUser(ctx, id, userUpdate)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	err := s.userRepository.DeleteUser(ctx, id)
+	if err != nil {
+		return err
+	}
 	return nil
 }

@@ -115,7 +115,7 @@ func NewContainer() (container *Container, err error) {
 	passwordEncryption := security.NewPasswordEncryption(argonConfig, pepperProvider)
 	userService := services.NewUserService(userRepository, passwordEncryption)
 
-	authRepository := redis.NewAuthRepository(redisClient, authEnv)
+	authRepository := redis.NewAuthRepository(redisClient)
 	mfaTokens, err := security.NewJwtProvider[core.MfaClaims](security.JwtConfig{
 		SecretKey: []byte("your-secret-key-here-should-be-at-least-32-bytes-long"),
 		TTL:       authEnv.LoginTokenTTL, // 15 minutes
@@ -127,7 +127,7 @@ func NewContainer() (container *Container, err error) {
 	}
 	sessionTokens, err := security.NewJwtProvider[core.SessionClaims](security.JwtConfig{
 		SecretKey: []byte("your-secret-key-here-should-be-at-least-32-bytes-long"),
-		TTL:       authEnv.SessionIdleTTL, // 24 hours
+		TTL:       authEnv.SessionAbsoluteTTL, // 24 hours
 		Issuer:    "user-api",
 		Audience:  "session",
 	})

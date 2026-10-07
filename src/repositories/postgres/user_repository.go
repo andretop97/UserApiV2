@@ -155,15 +155,27 @@ func (r *UserRepository) GetAllUsers(ctx context.Context) ([]*core.User, error) 
 
 	return users, nil
 }
-func (r *UserRepository) UpdateUser(ctx context.Context, user *core.User) (*core.User, error) {
-	query := `
-		UPDATE users
-		SET Name = COALESCE(NULLIF($1, ''), Name), Email = COALESCE(NULLIF($2, ''), Email), UpdatedAt = NOW()
-		WHERE Id = $3 AND DeletedAt IS NULL
-		RETURNING Id, Name, Email, CreatedAt, UpdatedAt, DeletedAt`
+func (r *UserRepository) UpdateUser(ctx context.Context, id uuid.UUID, userUpdate *core.UserUpdate) (*core.User, error) {
+	b := newSetBuilder(id)
+	if userUpdate.Name != nil {
+		b.Set("Name", userUpdate.Name)
+	}
+	if userUpdate.Email != nil {
+		b.Set("Email", userUpdate.Email)
+	}
+	if b.Empty() {
+		return nil, fmt.Errorf("%w: no fields to update", core.ErrBadRequest)
+	}
+	b.Raw("UpdatedAt = NOW()")
+
+	set, args := b.Build()
+
+	query := `UPDATE users SET ` + set + `
+        WHERE Id = $1 AND DeletedAt IS NULL
+        RETURNING Id, Name, Email, CreatedAt, UpdatedAt, DeletedAt`
 
 	userUpdated := &core.User{}
-	err := r.db.QueryRow(ctx, query, user.Name, user.Email, user.ID).
+	err := r.db.QueryRow(ctx, query, args...).
 		Scan(&userUpdated.ID, &userUpdated.Name, &userUpdated.Email, &userUpdated.CreatedAt, &userUpdated.UpdatedAt, &userUpdated.DeletedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -176,6 +188,7 @@ func (r *UserRepository) UpdateUser(ctx context.Context, user *core.User) (*core
 		return nil, fmt.Errorf("update user: %w", err)
 	}
 	return userUpdated, nil
+
 }
 func (r *UserRepository) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	query := `
