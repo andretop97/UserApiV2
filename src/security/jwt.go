@@ -1,49 +1,78 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/andretop97/UserApiV2/src/core"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
-type JwtProvider struct {
+type JwtConfig struct {
+	SecretKey []byte
+	TTL       time.Duration
+	Issuer    string
+	Audience  string
 }
 
-func NewJwtProvider() core.JwtProvider {
-	return &JwtProvider{}
+type claims[T any] struct {
+	Data T `json:"data"`
+	jwt.RegisteredClaims
+}
+type JwtProvider[T any] struct {
+	cfg    JwtConfig
+	parser *jwt.Parser
 }
 
-func (jp *JwtProvider) GenerateToken(payload string) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-		"payload": payload,
-		"exp":     time.Now().Add(time.Hour * 72).Unix(),
+func NewJwtProvider[T any](cfg JwtConfig) (core.JwtProvider[T], error) {
+	if len(cfg.SecretKey) < 32 {
+		return nil, fmt.Errorf("SecretKey must be at least 32 bytes long")
+	}
+	return &JwtProvider[T]{
+		cfg: cfg,
+		parser: jwt.NewParser(
+			jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+			jwt.WithIssuer(cfg.Issuer),
+			jwt.WithAudience(cfg.Audience),
+			jwt.WithExpirationRequired(),
+		),
+	}, nil
+}
+
+func (jp *JwtProvider[T]) GenerateToken(data T) (string, error) {
+	now := time.Now()
+	claims := claims[T]{
+		Data: data,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
+			Issuer:    jp.cfg.Issuer,
+			Audience:  jwt.ClaimStrings{jp.cfg.Audience},
+			ExpiresAt: jwt.NewNumericDate(now.Add(jp.cfg.TTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jp.cfg.SecretKey)
+}
+
+func (jp *JwtProvider[T]) ValidateToken(token string) (T, error) {
+	var zero T
+	claims := &claims[T]{}
+	_, err := jp.parser.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		return jp.cfg.SecretKey, nil
 	})
-	tokenString, err := token.SignedString([]byte("your-secret-key"))
+
 	if err != nil {
-		return "", err
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return zero, core.ErrTokenExpired
+		}
+		return zero, err
 	}
-	return tokenString, err
+	return claims.Data, nil
 }
 
-func (jp *JwtProvider) ValidateToken(token string) (string, error) {
-	queryToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
-		return []byte("your-secret-key"), nil
-	})
-	if err != nil {
-		return "", err
-	}
-	if !queryToken.Valid {
-		return "", fmt.Errorf("invalid token")
-	}
-	claims, ok := queryToken.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", fmt.Errorf("failed to extract claims")
-	}
-	payload, ok := claims["payload"].(string)
-	if !ok {
-		return "", fmt.Errorf("failed to extract payload")
-	}
-	return payload, nil
+func (jp *JwtProvider[T]) TTL() time.Duration {
+	return jp.cfg.TTL
 }

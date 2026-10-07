@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/andretop97/UserApiV2/src/controllers"
+	"github.com/andretop97/UserApiV2/src/core"
 	"github.com/andretop97/UserApiV2/src/migrations"
 	"github.com/andretop97/UserApiV2/src/repositories"
 	"github.com/andretop97/UserApiV2/src/repositories/postgres"
@@ -62,6 +63,11 @@ func NewContainer() (container *Container, err error) {
 		return nil, err
 	}
 
+	authEnv, err := utils.NewAuthEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	var closers []func() error
 
 	defer func() {
@@ -109,7 +115,27 @@ func NewContainer() (container *Container, err error) {
 	passwordEncryption := security.NewPasswordEncryption(argonConfig, pepperProvider)
 	userService := services.NewUserService(userRepository, passwordEncryption)
 
-	authService := services.NewAuthService(userRepository, passwordEncryption)
+	authRepository := redis.NewAuthRepository(redisClient, authEnv)
+	mfaTokens, err := security.NewJwtProvider[core.MfaClaims](security.JwtConfig{
+		SecretKey: []byte("your-secret-key-here-should-be-at-least-32-bytes-long"),
+		TTL:       authEnv.LoginTokenTTL, // 15 minutes
+		Issuer:    "user-api",
+		Audience:  "mfa",
+	})
+	if err != nil {
+		return nil, err
+	}
+	sessionTokens, err := security.NewJwtProvider[core.SessionClaims](security.JwtConfig{
+		SecretKey: []byte("your-secret-key-here-should-be-at-least-32-bytes-long"),
+		TTL:       authEnv.SessionIdleTTL, // 24 hours
+		Issuer:    "user-api",
+		Audience:  "session",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	authService := services.NewAuthService(userRepository, authRepository, passwordEncryption, mfaTokens, sessionTokens)
 
 	routerControllers := &routes.Controllers{
 		User: controllers.NewUserController(userService),

@@ -66,19 +66,6 @@ func (r *UpdateUserResponse) FromUser(user *core.User) {
 	r.DeletedAt = user.DeletedAt
 }
 
-type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
-type LoginResponse struct {
-	Token string `json:"token"`
-}
-
-func (r *LoginResponse) FromUser(token *string) {
-	r.Token = *token
-}
-
 type GetUserResponse struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`

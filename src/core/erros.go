@@ -16,4 +16,5 @@ var (
 	ErrUserNotFound       = &DomainError{Code: "USER_NOT_FOUND", Status: http.StatusNotFound, message: "user not found"}
 	ErrEmailAlreadyExists = &DomainError{Code: "EMAIL_ALREADY_EXISTS", Status: http.StatusConflict, message: "email already registered"}
 	ErrInvalidCredentials = &DomainError{Code: "INVALID_CREDENTIALS", Status: http.StatusUnauthorized, message: "invalid email or password"}
+	ErrTokenExpired       = &DomainError{Code: "TOKEN_EXPIRED", Status: http.StatusUnauthorized, message: "token expired"}
 )

@@ -1,7 +1,11 @@
 package controllers
 
 import (
+	"fmt"
+	"net/http"
+
 	"github.com/andretop97/UserApiV2/src/core"
+	"github.com/andretop97/UserApiV2/src/dto"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,20 +20,19 @@ func NewAuthController(authService core.AuthService) *AuthController {
 }
 
 func (ac *AuthController) Login(c *gin.Context) {
-	var loginRequest struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
+	var loginRequest dto.AuthLoginRequest
 	if err := c.ShouldBindJSON(&loginRequest); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		respondError(c, fmt.Errorf("%w: %s", core.ErrBadRequest, validationErrorMessage(err)))
 		return
 	}
-	token, err := ac.authService.Login(c.Request.Context(), loginRequest.Email, loginRequest.Password)
+	loginResponse, err := ac.authService.Login(c.Request.Context(), loginRequest.Email, loginRequest.Password)
 	if err != nil {
-		c.JSON(401, gin.H{"error": err.Error()})
+		respondError(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"token": token})
+	response := &dto.AuthLoginResponse{}
+	response.FromLogin(loginResponse)
+	c.JSON(http.StatusOK, response)
 }
 
 func (ac *AuthController) RegisterWebAuthnBegin(c *gin.Context) {
