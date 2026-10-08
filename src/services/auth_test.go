@@ -266,6 +266,6 @@ func allowAnyLookup(d *authDeps) {
 	user := storedUser()
 	d.users.On("GetUserByEmail", mock.Anything, mock.Anything).Return(user, nil).Maybe()
 	d.users.On("GetUserByID", mock.Anything, mock.Anything).Return(user, nil).Maybe()
-	d.auth.On("GetTemporaryToken", mock.Anything, mock.Anything).Return("", core.ErrUserNotFound).Maybe()
+	d.auth.On("GetTemporaryToken", mock.Anything, mock.Anything).Return("", core.ErrTokenInvalid).Maybe()
 	d.mfa.On("ValidateToken", mock.Anything).Return(core.MfaClaims{}, core.ErrTokenExpired).Maybe()
 }

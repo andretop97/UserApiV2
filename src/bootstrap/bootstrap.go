@@ -72,7 +72,7 @@ func NewContainer() (container *Container, err error) {
 
 	defer func() {
 		if err != nil {
-			for i := len(closers) - 1; i >= 0; i-- { // ordem inversa
+			for i := len(closers) - 1; i >= 0; i-- {
 				err = errors.Join(err, closers[i]())
 			}
 		}
@@ -117,8 +117,8 @@ func NewContainer() (container *Container, err error) {
 
 	authRepository := redis.NewAuthRepository(redisClient)
 	mfaTokens, err := security.NewJwtProvider[core.MfaClaims](security.JwtConfig{
-		SecretKey: []byte("your-secret-key-here-should-be-at-least-32-bytes-long"),
-		TTL:       authEnv.LoginTokenTTL, // 15 minutes
+		SecretKey: []byte(authEnv.MfaTokenSecret),
+		TTL:       authEnv.LoginTokenTTL,
 		Issuer:    "user-api",
 		Audience:  "mfa",
 	})
@@ -126,8 +126,8 @@ func NewContainer() (container *Container, err error) {
 		return nil, err
 	}
 	sessionTokens, err := security.NewJwtProvider[core.SessionClaims](security.JwtConfig{
-		SecretKey: []byte("your-secret-key-here-should-be-at-least-32-bytes-long"),
-		TTL:       authEnv.SessionAbsoluteTTL, // 24 hours
+		SecretKey: []byte(authEnv.SessionTokenSecret),
+		TTL:       authEnv.SessionAbsoluteTTL,
 		Issuer:    "user-api",
 		Audience:  "session",
 	})

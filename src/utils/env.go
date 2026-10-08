@@ -66,6 +66,8 @@ type AuthEnv struct {
 	LoginTokenTTL      time.Duration `env:"LOGIN_TOKEN_TTL" envDefault:"10m"`
 	SessionIdleTTL     time.Duration `env:"SESSION_IDLE_TTL" envDefault:"24h"`
 	SessionAbsoluteTTL time.Duration `env:"SESSION_ABSOLUTE_TTL" envDefault:"72h"`
+	MfaTokenSecret     string        `env:"MFA_TOKEN_SECRET,required"`
+	SessionTokenSecret string        `env:"SESSION_TOKEN_SECRET,required"`
 }
 
 func NewAuthEnv() (*AuthEnv, error) {
@@ -78,7 +80,7 @@ func NewAuthEnv() (*AuthEnv, error) {
 
 type PepperEnv struct {
 	Version int    `env:"PEPPER_VERSION" envDefault:"0"`
-	Secret  string `env:"PEPPER_SECRETS" envDefault:"0:VGVzdGVQZXBwZXI="`
+	Secret  string `env:"PEPPER_SECRETS,required"`
 }
 
 func NewPepperEnv() (*PepperEnv, error) {

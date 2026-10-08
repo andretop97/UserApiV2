@@ -2,6 +2,7 @@ package controllers_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,10 +47,10 @@ func TestUserControllerCreateUser(t *testing.T) {
 		router, svc := setupUserRouter(t)
 		created := sampleUser()
 		svc.On("CreateUser", mock.Anything, mock.MatchedBy(func(u *core.User) bool {
-			return u.Name == "João" && u.Email == "joao@example.com" && u.Password == "senha"
+			return u.Name == "João" && u.Email == "joao@example.com" && u.Password == "senha-forte"
 		})).Return(created, nil)
 
-		rec := do(t, router, http.MethodPost, "/v1/user/", `{"name":"João","email":"joao@example.com","password":"senha"}`)
+		rec := do(t, router, http.MethodPost, "/v1/user/", `{"name":"João","email":"joao@example.com","password":"senha-forte"}`)
 
 		assert.Equal(t, http.StatusCreated, rec.Code)
 		body := decodeJSON[map[string]any](t, rec)
@@ -69,11 +70,35 @@ func TestUserControllerCreateUser(t *testing.T) {
 		assert.Equal(t, "BAD_REQUEST", decodeJSON[errorBody](t, rec).Error.Code)
 	})
 
+	t.Run("400 com nome acima de 100 caracteres, mesmo limite do update", func(t *testing.T) {
+		router, _ := setupUserRouter(t)
+		body := `{"name":"` + strings.Repeat("a", 101) + `","email":"joao@example.com","password":"senha-forte"}`
+
+		rec := do(t, router, http.MethodPost, "/v1/user/", body)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	passwords := map[string]string{
+		"senha com menos de 8 caracteres":  "curta",
+		"senha com mais de 128 caracteres": strings.Repeat("a", 129),
+	}
+	for name, password := range passwords {
+		t.Run("400 sem chamar o service: "+name, func(t *testing.T) {
+			router, _ := setupUserRouter(t)
+			body := `{"name":"João","email":"joao@example.com","password":"` + password + `"}`
+
+			rec := do(t, router, http.MethodPost, "/v1/user/", body)
+
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+		})
+	}
+
 	t.Run("409 quando o e-mail já existe", func(t *testing.T) {
 		router, svc := setupUserRouter(t)
 		svc.On("CreateUser", mock.Anything, mock.Anything).Return(nil, core.ErrEmailAlreadyExists)
 
-		rec := do(t, router, http.MethodPost, "/v1/user/", `{"name":"João","email":"joao@example.com","password":"senha"}`)
+		rec := do(t, router, http.MethodPost, "/v1/user/", `{"name":"João","email":"joao@example.com","password":"senha-forte"}`)
 
 		assert.Equal(t, http.StatusConflict, rec.Code)
 		assert.Equal(t, "EMAIL_ALREADY_EXISTS", decodeJSON[errorBody](t, rec).Error.Code)
@@ -214,13 +239,48 @@ func TestUserControllerUpdateUser(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, rec.Code)
 	})
 
-	t.Run("400 sem nome", func(t *testing.T) {
-		router, _ := setupUserRouter(t)
+	t.Run("só e-mail: nome chega nil ao service", func(t *testing.T) {
+		router, svc := setupUserRouter(t)
+		user := sampleUser()
+		var received *core.UserUpdate
+		svc.On("UpdateUser", mock.Anything, user.ID, mock.Anything).
+			Run(func(args mock.Arguments) { received = args.Get(2).(*core.UserUpdate) }).
+			Return(user, nil)
+
+		rec := do(t, router, http.MethodPut, "/v1/user/"+user.ID.String(), `{"email":"novo@example.com"}`)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		require.NotNil(t, received)
+		assert.Nil(t, received.Name, "nome não enviado não deve ser alterado")
+		require.NotNil(t, received.Email)
+		assert.Equal(t, "novo@example.com", *received.Email)
+	})
+
+	t.Run("corpo vazio repassa o erro de update sem campos como 400", func(t *testing.T) {
+		router, svc := setupUserRouter(t)
+		svc.On("UpdateUser", mock.Anything, mock.Anything, &core.UserUpdate{}).Return(nil, core.ErrBadRequest)
 
 		rec := do(t, router, http.MethodPut, "/v1/user/"+uuid.NewString(), `{}`)
 
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
 	})
+
+	invalidBodies := map[string]string{
+		"nome vazio":       `{"name":""}`,
+		"e-mail inválido":  `{"email":"nao-e-email"}`,
+		"nome muito longo": `{"name":"` + strings.Repeat("a", 101) + `"}`,
+		"JSON malformado":  `{"name":`,
+	}
+	for name, body := range invalidBodies {
+		t.Run("400 sem chamar o service: "+name, func(t *testing.T) {
+			router, _ := setupUserRouter(t)
+
+			rec := do(t, router, http.MethodPut, "/v1/user/"+uuid.NewString(), body)
+
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Equal(t, "BAD_REQUEST", decodeJSON[errorBody](t, rec).Error.Code)
+		})
+	}
 }
 
 func TestUserControllerDeleteUser(t *testing.T) {

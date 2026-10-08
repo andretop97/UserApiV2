@@ -53,12 +53,16 @@ func (jp *JwtProvider[T]) GenerateToken(data T) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
+
+	if err := claims.Validate(); err != nil {
+		return "", fmt.Errorf("generate token: %w", err)
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jp.cfg.SecretKey)
 }
 
 func (jp *JwtProvider[T]) ValidateToken(token string) (T, error) {
-	var zero T
+	var data T
 	claims := &claims[T]{}
 	_, err := jp.parser.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
 		return jp.cfg.SecretKey, nil
@@ -66,13 +70,20 @@ func (jp *JwtProvider[T]) ValidateToken(token string) (T, error) {
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return zero, core.ErrTokenExpired
+			return data, core.ErrTokenExpired
 		}
-		return zero, fmt.Errorf("%w: %w", core.ErrTokenInvalid, err)
+		return data, core.ErrTokenInvalid
 	}
 	return claims.Data, nil
 }
 
 func (jp *JwtProvider[T]) TTL() time.Duration {
 	return jp.cfg.TTL
+}
+
+func (c claims[T]) Validate() error {
+	if v, ok := any(c.Data).(interface{ Validate() error }); ok {
+		return v.Validate()
+	}
+	return nil
 }

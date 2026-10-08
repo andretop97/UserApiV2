@@ -1,13 +1,13 @@
 include .env
 
 migrate_up:
-	migrate -path=src/migrations -database "postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable" -verbose up
+	migrate -path=src/migrations -database "postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable" -verbose up
 
 migrate_down:
-	migrate -path=src/migrations -database "postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable" -verbose down
+	migrate -path=src/migrations -database "postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable" -verbose down
 
 migrate_rollback:
-	migrate -path=src/migrations -database "postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable" -verbose down 1
+	migrate -path=src/migrations -database "postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@${POSTGRESQL_HOST}:${POSTGRESQL_PORT}/${POSTGRESQL_DATABASE}?sslmode=disable" -verbose down 1
 
 infra_up:
 	docker compose up -d --wait postgres redis

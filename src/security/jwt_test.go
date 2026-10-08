@@ -132,6 +132,23 @@ func TestJwtGenerateToken(t *testing.T) {
 		assert.NotEqual(t, decodeClaims(t, t1)["jti"], decodeClaims(t, t2)["jti"])
 	})
 
+	t.Run("recusa gerar token MFA sem user_id", func(t *testing.T) {
+		token, err := newMfaProvider(t, jwtConfig("mfa")).GenerateToken(core.MfaClaims{})
+
+		assert.Error(t, err)
+		assert.Empty(t, token)
+	})
+
+	t.Run("recusa gerar token de sessão sem user_id", func(t *testing.T) {
+		p, err := security.NewJwtProvider[core.SessionClaims](jwtConfig("session"))
+		require.NoError(t, err)
+
+		token, err := p.GenerateToken(core.SessionClaims{})
+
+		assert.Error(t, err)
+		assert.Empty(t, token)
+	})
+
 	t.Run("assina com HS256", func(t *testing.T) {
 		p := newMfaProvider(t, jwtConfig("mfa"))
 		token, err := p.GenerateToken(core.MfaClaims{UserID: uuid.New()})
@@ -241,6 +258,26 @@ func TestJwtValidateToken(t *testing.T) {
 		_, err = p.ValidateToken(strings.Join(parts, "."))
 
 		assertInvalidTokenError(t, err)
+	})
+
+	t.Run("rejeita token assinado com user_id zerado", func(t *testing.T) {
+		claims := validClaims()
+		claims["data"] = map[string]any{"user_id": uuid.Nil.String()}
+		token := signRaw(t, jwt.SigningMethodHS256, claims, testSecret)
+
+		_, err := newMfaProvider(t, jwtConfig("mfa")).ValidateToken(token)
+
+		assert.ErrorIs(t, err, core.ErrTokenInvalid)
+	})
+
+	t.Run("rejeita token assinado sem o campo data", func(t *testing.T) {
+		claims := validClaims()
+		delete(claims, "data")
+		token := signRaw(t, jwt.SigningMethodHS256, claims, testSecret)
+
+		_, err := newMfaProvider(t, jwtConfig("mfa")).ValidateToken(token)
+
+		assert.ErrorIs(t, err, core.ErrTokenInvalid)
 	})
 
 	t.Run("rejeita string que não é JWT", func(t *testing.T) {

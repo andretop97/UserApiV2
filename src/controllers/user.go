@@ -60,7 +60,7 @@ func (uc *UserController) GetUsersByName(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	var userResponses []dto.GetUserResponse
+	userResponses := make([]dto.GetUserResponse, 0, len(users))
 	for _, user := range users {
 		response := &dto.GetUserResponse{}
 		response.FromUser(user)
@@ -87,7 +87,7 @@ func (uc *UserController) GetAllUsers(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	var userResponses []dto.GetUserResponse
+	userResponses := make([]dto.GetUserResponse, 0, len(users))
 	for _, user := range users {
 		response := &dto.GetUserResponse{}
 		response.FromUser(user)

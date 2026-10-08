@@ -50,7 +50,6 @@ func (as *AuthService) Login(ctx context.Context, email, password string) (*core
 	if !isMatch {
 		return nil, core.ErrInvalidCredentials
 	}
-
 	token, err := as.mfaTokens.GenerateToken(core.MfaClaims{UserID: user.ID})
 	if err != nil {
 		return nil, err

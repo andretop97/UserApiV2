@@ -45,6 +45,15 @@ func TestUserServiceCreateUser(t *testing.T) {
 		assert.Same(t, created, got)
 	})
 
+	t.Run("nome só com espaços vira ErrBadRequest sem consultar nem gravar", func(t *testing.T) {
+		svc, _, _ := setupUserService(t)
+
+		got, err := svc.CreateUser(ctx, &core.User{Name: "   ", Email: "joao@example.com", Password: "senha"})
+
+		assert.ErrorIs(t, err, core.ErrBadRequest)
+		assert.Nil(t, got)
+	})
+
 	t.Run("e-mail já cadastrado vira ErrEmailAlreadyExists sem gerar hash", func(t *testing.T) {
 		svc, repo, _ := setupUserService(t)
 		repo.On("GetUserByEmail", ctx, "joao@example.com").Return(&core.User{ID: uuid.New()}, nil)
@@ -136,6 +145,24 @@ func TestUserServiceGetUsersByName(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, users, got)
+	})
+
+	t.Run("remove espaços das pontas antes de buscar", func(t *testing.T) {
+		svc, repo, _ := setupUserService(t)
+		repo.On("GetUsersByName", ctx, "João").Return([]*core.User{}, nil)
+
+		_, err := svc.GetUsersByName(ctx, "  João  ")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("busca só com espaços vira ErrBadRequest sem consultar o repositório", func(t *testing.T) {
+		svc, _, _ := setupUserService(t)
+
+		got, err := svc.GetUsersByName(ctx, "   ")
+
+		assert.ErrorIs(t, err, core.ErrBadRequest)
+		assert.Nil(t, got)
 	})
 
 	t.Run("propaga erro", func(t *testing.T) {
@@ -253,6 +280,15 @@ func TestUserServiceUpdateUser(t *testing.T) {
 		require.NotNil(t, received)
 		assert.Equal(t, "João", *received.Name)
 		assert.Equal(t, "joao@example.com", *received.Email)
+	})
+
+	t.Run("nome só com espaços vira ErrBadRequest sem chamar o repositório", func(t *testing.T) {
+		svc, _, _ := setupUserService(t)
+
+		got, err := svc.UpdateUser(ctx, uuid.New(), &core.UserUpdate{Name: ptr("   ")})
+
+		assert.ErrorIs(t, err, core.ErrBadRequest)
+		assert.Nil(t, got)
 	})
 
 	t.Run("usuário inexistente vira ErrUserNotFound", func(t *testing.T) {

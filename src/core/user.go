@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -25,4 +26,12 @@ type UserUpdate struct {
 
 func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func NormalizeName(name string) (string, error) {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return "", fmt.Errorf("%w: name cannot be empty", ErrBadRequest)
+	}
+	return n, nil
 }

@@ -50,13 +50,11 @@ func userKey(id uuid.UUID) string {
 }
 
 func jitterDuration(duration time.Duration) time.Duration {
-	jitter := time.Duration(float64(duration) * 0.1)
-
-	jitter = duration + time.Duration(rand.Int63n(int64(jitter)))
-	if jitter <= 0 {
+	max := int64(duration) / 10
+	if max <= 0 {
 		return duration
 	}
-	return jitter
+	return duration + time.Duration(rand.Int63n(max))
 }
 
 type UserCache struct {

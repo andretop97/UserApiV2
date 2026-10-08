@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/andretop97/UserApiV2/src/core"
 	"github.com/google/uuid"
@@ -23,7 +22,11 @@ func NewUserService(userRepository core.UserRepository, passwordEncryption core.
 
 func (s *UserService) CreateUser(ctx context.Context, user *core.User) (*core.User, error) {
 	user.Email = core.NormalizeEmail(user.Email)
-	user.Name = strings.TrimSpace(user.Name)
+	name, err := core.NormalizeName(user.Name)
+	if err != nil {
+		return nil, err
+	}
+	user.Name = name
 
 	u, err := s.userRepository.GetUserByEmail(ctx, user.Email)
 	if err != nil {
@@ -61,6 +64,10 @@ func (s *UserService) GetUserByID(ctx context.Context, id uuid.UUID) (*core.User
 }
 
 func (s *UserService) GetUsersByName(ctx context.Context, name string) ([]*core.User, error) {
+	name, err := core.NormalizeName(name)
+	if err != nil {
+		return nil, err
+	}
 	users, err := s.userRepository.GetUsersByName(ctx, name)
 	if err != nil {
 		return nil, err
@@ -69,6 +76,7 @@ func (s *UserService) GetUsersByName(ctx context.Context, name string) ([]*core.
 }
 
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*core.User, error) {
+	email = core.NormalizeEmail(email)
 	user, err := s.userRepository.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, err
@@ -93,9 +101,11 @@ func (s *UserService) UpdateUser(ctx context.Context, id uuid.UUID, userUpdate *
 		userUpdate.Email = &email
 	}
 	if userUpdate.Name != nil {
-		name := strings.TrimSpace(*userUpdate.Name)
+		name, err := core.NormalizeName(*userUpdate.Name)
+		if err != nil {
+			return nil, err
+		}
 		userUpdate.Name = &name
-
 	}
 
 	user, err := s.userRepository.UpdateUser(ctx, id, userUpdate)

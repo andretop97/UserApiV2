@@ -15,8 +15,6 @@ RUN apk --no-cache add curl
 
 COPY --from=builder /UserApiv2 /UserApiv2
 
-COPY migrations /migrations
-
 EXPOSE 8080
 
 CMD [ "/UserApiv2" ]

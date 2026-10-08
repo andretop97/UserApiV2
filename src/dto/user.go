@@ -7,9 +7,9 @@ import (
 )
 
 type CreateUserRequest struct {
-	Name     string `json:"name" binding:"required"`
+	Name     string `json:"name" binding:"required,max=100"`
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,min=8,max=128"`
 }
 
 func (r *CreateUserRequest) ToUser() *core.User {
@@ -39,12 +39,14 @@ func (r *CreateUserResponse) FromUser(user *core.User) {
 }
 
 type UpdateUserRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name  *string `json:"name"  binding:"omitempty,min=1,max=100"`
+	Email *string `json:"email" binding:"omitempty,email"`
 }
 
 func (r *UpdateUserRequest) ToUserUpdate() *core.UserUpdate {
 	return &core.UserUpdate{
-		Name: &r.Name,
+		Name:  r.Name,
+		Email: r.Email,
 	}
 }
 

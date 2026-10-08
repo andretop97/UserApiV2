@@ -132,7 +132,8 @@ func TestUserCacheGetByID(t *testing.T) {
 		assert.Nil(t, got)
 	})
 
-	// JSON válido mas sem usuário (ID zerado) é tratado como miss, para o source repovoar a chave.
+	// JSON válido mas sem usuário (ID zerado) só aparece por bug ou mudança de schema, então
+	// vira erro para ficar visível no log. O decorator repovoa a chave a partir do source mesmo assim.
 	emptyPayloads := map[string]string{
 		"null":                     "null",
 		"objeto vazio":             "{}",
@@ -140,14 +141,14 @@ func TestUserCacheGetByID(t *testing.T) {
 		"id zerado explicitamente": `{"id":"00000000-0000-0000-0000-000000000000","name":"João"}`,
 	}
 	for name, payload := range emptyPayloads {
-		t.Run("payload sem usuário é miss: "+name, func(t *testing.T) {
+		t.Run("payload sem usuário retorna erro: "+name, func(t *testing.T) {
 			cache := setup(t)
 			id := uuid.New()
 			require.NoError(t, testClient.Set(ctx, cacheKey(id), payload, 0).Err())
 
 			got, found, err := cache.GetByID(ctx, id)
 
-			require.NoError(t, err)
+			assert.Error(t, err)
 			assert.False(t, found)
 			assert.Nil(t, got)
 		})
@@ -246,10 +247,12 @@ func TestUserCacheSet(t *testing.T) {
 
 		require.NoError(t, cache.Set(ctx, user))
 
-		ttl, err := testClient.TTL(ctx, cacheKey(user.ID)).Result()
+		// O jitter só soma (0 a 10%), então o TTL configurado é o mínimo garantido.
+		// PTTL em vez de TTL: o TTL do Redis arredonda para segundos.
+		ttl, err := testClient.PTTL(ctx, cacheKey(user.ID)).Result()
 		require.NoError(t, err)
-		assert.Greater(t, ttl, time.Duration(0), "chave deve ter expiração")
-		assert.LessOrEqual(t, ttl, testTTL)
+		assert.GreaterOrEqual(t, ttl, testTTL-time.Second, "não pode expirar antes do configurado")
+		assert.Less(t, ttl, testTTL+testTTL/10, "jitter acima de 10%%")
 	})
 
 	t.Run("sobrescrever renova o TTL", func(t *testing.T) {
