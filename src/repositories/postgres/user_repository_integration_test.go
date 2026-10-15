@@ -92,7 +92,8 @@ func migrateUp(dsn string) error {
 
 func setup(t *testing.T) core.UserRepository {
 	t.Helper()
-	_, err := testPool.Exec(context.Background(), "TRUNCATE users")
+	// CASCADE também limpa as tabelas que referenciam users (ex.: passkeys).
+	_, err := testPool.Exec(context.Background(), "TRUNCATE users CASCADE")
 	require.NoError(t, err)
 	return postgres.NewUserRepository(testPool)
 }
