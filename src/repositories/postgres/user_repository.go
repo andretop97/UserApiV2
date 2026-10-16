@@ -188,8 +188,8 @@ func (r *UserRepository) UpdateUser(ctx context.Context, id uuid.UUID, userUpdat
 		return nil, fmt.Errorf("update user: %w", err)
 	}
 	return userUpdated, nil
-
 }
+
 func (r *UserRepository) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	query := `
 		UPDATE users

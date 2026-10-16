@@ -34,7 +34,10 @@ func (pk *PasskeyRepository) Create(ctx context.Context, p *core.Passkey) error 
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return core.ErrPasskeyAlreadyRegistered
 		}
-		return err
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ForeignKeyViolation {
+			return core.ErrUserNotFound
+		}
+		return fmt.Errorf("create passkey: %w", err)
 	}
 
 	return nil
@@ -49,36 +52,43 @@ func (pk *PasskeyRepository) ListByUser(ctx context.Context, userID uuid.UUID) (
 			passkeys.LastUsedAt
 		FROM passkeys 
 		WHERE 
-			passkeys.UserId = $1`
+			passkeys.UserId = $1
+		ORDER BY CreatedAt`
 
 	rows, err := pk.db.Query(ctx, query, userID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, core.ErrPasskeyNotFound
-		}
-		return nil, fmt.Errorf("get passkey by UserId: %w", err)
+		return nil, fmt.Errorf("list passkeys: %w", err)
 	}
 	defer rows.Close()
 	passkeys, err := scanPasskey(rows)
 	if err != nil {
-		return nil, fmt.Errorf("get passkeys by UserId: %w", err)
+		return nil, fmt.Errorf("list passkeys: %w", err)
 	}
 	return passkeys, nil
 
 }
 func (pk *PasskeyRepository) UpdateAfterLogin(ctx context.Context, id []byte, data []byte) error {
+	const query = `UPDATE passkeys SET Data = $2, LastUsedAt = NOW() WHERE Id = $1`
+	tag, err := pk.db.Exec(ctx, query, id, data)
+
+	if err != nil {
+		return fmt.Errorf("update passkey: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return core.ErrPasskeyNotFound
+	}
 	return nil
 }
 
 func scanPasskey(rows pgx.Rows) ([]*core.Passkey, error) {
 	passkeys := make([]*core.Passkey, 0)
 	for rows.Next() {
-		var user core.Passkey
-		err := rows.Scan(&user.ID, &user.UserID, &user.Data, &user.CreatedAt, &user.LastUsedAt)
+		var passkey core.Passkey
+		err := rows.Scan(&passkey.ID, &passkey.UserID, &passkey.Data, &passkey.CreatedAt, &passkey.LastUsedAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan passkey: %w", err)
 		}
-		passkeys = append(passkeys, &user)
+		passkeys = append(passkeys, &passkey)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("scan passkeys: %w", err)
