@@ -3,9 +3,11 @@ package security
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/andretop97/UserApiV2/src/core"
+	"github.com/descope/virtualwebauthn"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
@@ -13,12 +15,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Testes dos detalhes privados do adapter (webauthnUser e conversões).
-// Os quatro métodos públicos ainda são stubs e serão testados quando forem implementados.
+// Testes do adapter WebAuthn: os detalhes privados (webauthnUser e conversões) e as quatro
+// cerimônias, com um autenticador virtual no papel do navegador e do dispositivo.
 
 // webauthnUser precisa satisfazer a interface da lib; se um método faltar, o pacote não compila.
 var _ webauthn.User = webauthnUser{}
 
+// testCredential tem uma chave pública falsa: serve para os testes de conversão, mas nenhuma
+// assinatura confere com ela. Os testes de Finish usam passkeys de um cadastro real (registerPasskey).
 func testCredential(id ...byte) webauthn.Credential {
 	return webauthn.Credential{
 		ID:                id,
@@ -191,5 +195,510 @@ func TestToCredentials(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, got)
+	})
+}
+
+// newTestVerifier monta o adapter pelo construtor, com uma instância real da lib.
+func newTestVerifier(t *testing.T) *WebAuthnVerifier {
+	t.Helper()
+	w, err := webauthn.New(&webauthn.Config{
+		RPID:          "localhost",
+		RPDisplayName: "UserApiV2",
+		RPOrigins:     []string{"http://localhost:3000"},
+	})
+	require.NoError(t, err)
+	return NewWebAuthnVerifier(w).(*WebAuthnVerifier)
+}
+
+// creationOptions espelha só os campos das opções de cadastro que os testes verificam.
+type creationOptions struct {
+	PublicKey struct {
+		RP struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"rp"`
+		User struct {
+			ID          protocol.URLEncodedBase64 `json:"id"`
+			Name        string                    `json:"name"`
+			DisplayName string                    `json:"displayName"`
+		} `json:"user"`
+		Challenge          protocol.URLEncodedBase64 `json:"challenge"`
+		ExcludeCredentials []struct {
+			ID protocol.URLEncodedBase64 `json:"id"`
+		} `json:"excludeCredentials"`
+		AuthenticatorSelection struct {
+			ResidentKey      string `json:"residentKey"`
+			UserVerification string `json:"userVerification"`
+		} `json:"authenticatorSelection"`
+	} `json:"publicKey"`
+}
+
+func beginRegistration(t *testing.T, v *WebAuthnVerifier, user *core.User, existing []*core.Passkey) (creationOptions, webauthn.SessionData) {
+	t.Helper()
+	options, session, err := v.BeginRegistration(user, existing)
+	require.NoError(t, err)
+
+	var opts creationOptions
+	require.NoError(t, json.Unmarshal(options, &opts))
+	var sess webauthn.SessionData
+	require.NoError(t, json.Unmarshal(session, &sess))
+	return opts, sess
+}
+
+func TestBeginRegistration(t *testing.T) {
+	user := &core.User{ID: uuid.New(), Name: "João Silva", Email: "joao@example.com"}
+
+	t.Run("opções identificam o site configurado", func(t *testing.T) {
+		opts, _ := beginRegistration(t, newTestVerifier(t), user, nil)
+
+		assert.Equal(t, "localhost", opts.PublicKey.RP.ID)
+		assert.Equal(t, "UserApiV2", opts.PublicKey.RP.Name)
+	})
+
+	t.Run("user.id são os bytes do UUID, e os nomes vêm do usuário", func(t *testing.T) {
+		opts, _ := beginRegistration(t, newTestVerifier(t), user, nil)
+
+		assert.Equal(t, user.ID[:], []byte(opts.PublicKey.User.ID))
+		assert.Equal(t, "joao@example.com", opts.PublicKey.User.Name)
+		assert.Equal(t, "João Silva", opts.PublicKey.User.DisplayName)
+	})
+
+	t.Run("exige verificação do usuário e prefere passkey descobrível", func(t *testing.T) {
+		opts, sess := beginRegistration(t, newTestVerifier(t), user, nil)
+
+		assert.Equal(t, "required", opts.PublicKey.AuthenticatorSelection.UserVerification)
+		assert.Equal(t, "preferred", opts.PublicKey.AuthenticatorSelection.ResidentKey)
+		assert.Equal(t, protocol.VerificationRequired, sess.UserVerification, "o finish precisa cobrar a verificação")
+	})
+
+	t.Run("challenge tem pelo menos 16 bytes", func(t *testing.T) {
+		opts, _ := beginRegistration(t, newTestVerifier(t), user, nil)
+
+		assert.GreaterOrEqual(t, len(opts.PublicKey.Challenge), 16)
+	})
+
+	t.Run("challenge muda a cada cerimônia", func(t *testing.T) {
+		v := newTestVerifier(t)
+		first, _ := beginRegistration(t, v, user, nil)
+		second, _ := beginRegistration(t, v, user, nil)
+
+		assert.NotEqual(t, first.PublicKey.Challenge, second.PublicKey.Challenge)
+	})
+
+	t.Run("sessão guarda o mesmo challenge e o usuário", func(t *testing.T) {
+		opts, sess := beginRegistration(t, newTestVerifier(t), user, nil)
+
+		assert.Equal(t, opts.PublicKey.Challenge.String(), sess.Challenge)
+		assert.Equal(t, user.ID[:], sess.UserID)
+	})
+
+	t.Run("sem passkeys não há exclusões", func(t *testing.T) {
+		opts, _ := beginRegistration(t, newTestVerifier(t), user, nil)
+
+		assert.Empty(t, opts.PublicKey.ExcludeCredentials)
+	})
+
+	t.Run("passkeys existentes entram em excludeCredentials", func(t *testing.T) {
+		var existing []*core.Passkey
+		for _, id := range []byte{1, 2} {
+			cred := testCredential(id)
+			p, err := toPasskey(user.ID, &cred)
+			require.NoError(t, err)
+			existing = append(existing, p)
+		}
+
+		opts, _ := beginRegistration(t, newTestVerifier(t), user, existing)
+
+		require.Len(t, opts.PublicKey.ExcludeCredentials, 2)
+		assert.Equal(t, []byte{1}, []byte(opts.PublicKey.ExcludeCredentials[0].ID))
+		assert.Equal(t, []byte{2}, []byte(opts.PublicKey.ExcludeCredentials[1].ID))
+	})
+
+	t.Run("passkey existente corrompida retorna erro", func(t *testing.T) {
+		existing := []*core.Passkey{{ID: []byte{1}, UserID: user.ID, Data: []byte("{")}}
+
+		options, session, err := newTestVerifier(t).BeginRegistration(user, existing)
+
+		assert.Error(t, err)
+		assert.Nil(t, options)
+		assert.Nil(t, session)
+	})
+}
+
+// testRP é o site visto pelo autenticador virtual; precisa bater com newTestVerifier.
+var testRP = virtualwebauthn.RelyingParty{ID: "localhost", Name: "UserApiV2", Origin: "http://localhost:3000"}
+
+func newTestUser(name string) *core.User {
+	return &core.User{ID: uuid.New(), Name: name, Email: name + "@example.com"}
+}
+
+// newAuthenticator cria o "dispositivo" do usuário; o UserHandle volta em todo login.
+func newAuthenticator(user *core.User) *virtualwebauthn.Authenticator {
+	auth := virtualwebauthn.NewAuthenticatorWithOptions(virtualwebauthn.AuthenticatorOptions{UserHandle: user.ID[:]})
+	return &auth
+}
+
+func newDeviceCredential() virtualwebauthn.Credential {
+	return virtualwebauthn.NewCredential(virtualwebauthn.KeyTypeEC2)
+}
+
+// attest responde às opções de cadastro como o navegador faria.
+func attest(t *testing.T, rp virtualwebauthn.RelyingParty, auth *virtualwebauthn.Authenticator, cred virtualwebauthn.Credential, options json.RawMessage) []byte {
+	t.Helper()
+	attOpts, err := virtualwebauthn.ParseAttestationOptions(string(options))
+	require.NoError(t, err)
+	return []byte(virtualwebauthn.CreateAttestationResponse(rp, *auth, cred, *attOpts))
+}
+
+// assertWith responde às opções de login assinando com a credencial informada.
+func assertWith(t *testing.T, rp virtualwebauthn.RelyingParty, auth *virtualwebauthn.Authenticator, cred virtualwebauthn.Credential, options json.RawMessage) []byte {
+	t.Helper()
+	assOpts, err := virtualwebauthn.ParseAssertionOptions(string(options))
+	require.NoError(t, err)
+	return []byte(virtualwebauthn.CreateAssertionResponse(rp, *auth, cred, *assOpts))
+}
+
+// registerPasskey faz o cadastro completo e devolve a passkey gravável, o autenticador que a guarda
+// e a credencial do lado do dispositivo (com a chave privada).
+func registerPasskey(t *testing.T, v *WebAuthnVerifier, user *core.User, counter uint32) (*core.Passkey, *virtualwebauthn.Authenticator, virtualwebauthn.Credential) {
+	t.Helper()
+	options, session, err := v.BeginRegistration(user, nil)
+	require.NoError(t, err)
+
+	auth := newAuthenticator(user)
+	cred := newDeviceCredential()
+	cred.Counter = counter
+
+	passkey, err := v.FinishRegistration(user, nil, session, attest(t, testRP, auth, cred, options))
+	require.NoError(t, err)
+	auth.AddCredential(cred)
+	return passkey, auth, cred
+}
+
+func signCount(t *testing.T, p *core.Passkey) uint32 {
+	t.Helper()
+	creds, err := toCredentials([]*core.Passkey{p})
+	require.NoError(t, err)
+	return creds[0].Authenticator.SignCount
+}
+
+func isDomainError(err error) bool {
+	var domainErr *core.DomainError
+	return errors.As(err, &domainErr)
+}
+
+func TestFinishRegistration(t *testing.T) {
+	t.Run("resposta válida devolve a passkey do usuário", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+
+		passkey, _, cred := registerPasskey(t, v, user, 0)
+
+		assert.Equal(t, cred.ID, passkey.ID)
+		assert.Equal(t, user.ID, passkey.UserID)
+		creds, err := toCredentials([]*core.Passkey{passkey})
+		require.NoError(t, err)
+		assert.NotEmpty(t, creds[0].PublicKey, "sem a chave pública o login não tem o que verificar")
+		assert.True(t, creds[0].Flags.UserVerified)
+	})
+
+	t.Run("origem fora do RPOrigins é recusada (phishing)", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		options, session, err := v.BeginRegistration(user, nil)
+		require.NoError(t, err)
+		evil := testRP
+		evil.Origin = "https://evil.com"
+
+		passkey, err := v.FinishRegistration(user, nil, session, attest(t, evil, newAuthenticator(user), newDeviceCredential(), options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+		assert.Nil(t, passkey)
+	})
+
+	t.Run("challenge de outra cerimônia é recusado (replay)", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		firstOptions, _, err := v.BeginRegistration(user, nil)
+		require.NoError(t, err)
+		_, secondSession, err := v.BeginRegistration(user, nil)
+		require.NoError(t, err)
+
+		_, err = v.FinishRegistration(user, nil, secondSession, attest(t, testRP, newAuthenticator(user), newDeviceCredential(), firstOptions))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("sem verificação do usuário é recusado", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		options, session, err := v.BeginRegistration(user, nil)
+		require.NoError(t, err)
+		auth := newAuthenticator(user)
+		auth.Options.UserNotVerified = true
+
+		_, err = v.FinishRegistration(user, nil, session, attest(t, testRP, auth, newDeviceCredential(), options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("sessão de outro usuário é recusada", func(t *testing.T) {
+		v := newTestVerifier(t)
+		alice, bob := newTestUser("alice"), newTestUser("bob")
+		options, session, err := v.BeginRegistration(alice, nil)
+		require.NoError(t, err)
+
+		_, err = v.FinishRegistration(bob, nil, session, attest(t, testRP, newAuthenticator(alice), newDeviceCredential(), options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("corpo malformado é erro do cliente", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		_, session, err := v.BeginRegistration(user, nil)
+		require.NoError(t, err)
+
+		_, err = v.FinishRegistration(user, nil, session, []byte("{"))
+
+		assert.ErrorIs(t, err, core.ErrBadRequest)
+	})
+
+	t.Run("sessão corrompida é erro interno", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		options, _, err := v.BeginRegistration(user, nil)
+		require.NoError(t, err)
+
+		_, err = v.FinishRegistration(user, nil, []byte("não é json"), attest(t, testRP, newAuthenticator(user), newDeviceCredential(), options))
+
+		require.Error(t, err)
+		assert.False(t, isDomainError(err), "a sessão vem do Redis, não do cliente: deve virar 500")
+	})
+}
+
+// requestOptions espelha só os campos das opções de login que os testes verificam.
+type requestOptions struct {
+	PublicKey struct {
+		RPID             string                    `json:"rpId"`
+		Challenge        protocol.URLEncodedBase64 `json:"challenge"`
+		UserVerification string                    `json:"userVerification"`
+		AllowCredentials []struct {
+			ID protocol.URLEncodedBase64 `json:"id"`
+		} `json:"allowCredentials"`
+	} `json:"publicKey"`
+}
+
+func TestBeginLogin(t *testing.T) {
+	t.Run("opções liberam só as passkeys do usuário e exigem verificação", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		passkey, _, _ := registerPasskey(t, v, user, 0)
+
+		options, session, err := v.BeginLogin(user, []*core.Passkey{passkey})
+		require.NoError(t, err)
+
+		var opts requestOptions
+		require.NoError(t, json.Unmarshal(options, &opts))
+		assert.Equal(t, "localhost", opts.PublicKey.RPID)
+		assert.Equal(t, "required", opts.PublicKey.UserVerification)
+		require.Len(t, opts.PublicKey.AllowCredentials, 1)
+		assert.Equal(t, passkey.ID, []byte(opts.PublicKey.AllowCredentials[0].ID))
+
+		var sess webauthn.SessionData
+		require.NoError(t, json.Unmarshal(session, &sess))
+		assert.Equal(t, opts.PublicKey.Challenge.String(), sess.Challenge)
+		assert.Equal(t, user.ID[:], sess.UserID)
+		assert.Equal(t, protocol.VerificationRequired, sess.UserVerification, "o finish precisa cobrar a verificação")
+	})
+
+	t.Run("challenge muda a cada cerimônia", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		passkey, _, _ := registerPasskey(t, v, user, 0)
+		existing := []*core.Passkey{passkey}
+
+		first, _, err := v.BeginLogin(user, existing)
+		require.NoError(t, err)
+		second, _, err := v.BeginLogin(user, existing)
+		require.NoError(t, err)
+
+		var a, b requestOptions
+		require.NoError(t, json.Unmarshal(first, &a))
+		require.NoError(t, json.Unmarshal(second, &b))
+		assert.NotEqual(t, a.PublicKey.Challenge, b.PublicKey.Challenge)
+	})
+
+	t.Run("usuário sem passkey retorna erro", func(t *testing.T) {
+		options, session, err := newTestVerifier(t).BeginLogin(newTestUser("joao"), nil)
+
+		assert.Error(t, err)
+		assert.Nil(t, options)
+		assert.Nil(t, session)
+	})
+
+	t.Run("passkey existente corrompida retorna erro", func(t *testing.T) {
+		user := newTestUser("joao")
+		existing := []*core.Passkey{{ID: []byte{1}, UserID: user.ID, Data: []byte("{")}}
+
+		_, _, err := newTestVerifier(t).BeginLogin(user, existing)
+
+		assert.Error(t, err)
+	})
+}
+
+// loginFixture é um usuário com uma passkey cadastrada e uma cerimônia de login aberta.
+type loginFixture struct {
+	v        *WebAuthnVerifier
+	user     *core.User
+	passkey  *core.Passkey
+	existing []*core.Passkey
+	auth     *virtualwebauthn.Authenticator
+	cred     virtualwebauthn.Credential
+	options  json.RawMessage
+	session  []byte
+}
+
+func newLoginFixture(t *testing.T, counter uint32) loginFixture {
+	t.Helper()
+	v := newTestVerifier(t)
+	user := newTestUser("joao")
+	passkey, auth, cred := registerPasskey(t, v, user, counter)
+	existing := []*core.Passkey{passkey}
+	options, session, err := v.BeginLogin(user, existing)
+	require.NoError(t, err)
+	return loginFixture{v: v, user: user, passkey: passkey, existing: existing, auth: auth, cred: cred, options: options, session: session}
+}
+
+func TestFinishLogin(t *testing.T) {
+	t.Run("ida e volta: cadastro e depois login com o mesmo dispositivo", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+		assOpts, err := virtualwebauthn.ParseAssertionOptions(string(f.options))
+		require.NoError(t, err)
+		found := f.auth.FindAllowedCredential(*assOpts)
+		require.NotNil(t, found, "o dispositivo precisa ter uma passkey liberada pelo servidor")
+		response := virtualwebauthn.CreateAssertionResponse(testRP, *f.auth, *found, *assOpts)
+
+		used, err := f.v.FinishLogin(f.user, f.existing, f.session, []byte(response))
+
+		require.NoError(t, err)
+		assert.Equal(t, f.passkey.ID, used.ID)
+		assert.Equal(t, f.user.ID, used.UserID)
+	})
+
+	t.Run("sign count maior é aceito e atualizado", func(t *testing.T) {
+		f := newLoginFixture(t, 5)
+		f.cred.Counter = 6
+
+		used, err := f.v.FinishLogin(f.user, f.existing, f.session, assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		require.NoError(t, err)
+		assert.Equal(t, uint32(5), signCount(t, f.passkey))
+		assert.Equal(t, uint32(6), signCount(t, used))
+	})
+
+	t.Run("sign count menor que o guardado é recusado (clone)", func(t *testing.T) {
+		f := newLoginFixture(t, 5)
+		f.cred.Counter = 3
+
+		used, err := f.v.FinishLogin(f.user, f.existing, f.session, assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+		assert.Nil(t, used)
+	})
+
+	t.Run("sign count igual ao guardado é recusado (clone)", func(t *testing.T) {
+		f := newLoginFixture(t, 5)
+
+		_, err := f.v.FinishLogin(f.user, f.existing, f.session, assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("sign count sempre 0 é aceito (passkey sincronizada)", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+
+		_, err := f.v.FinishLogin(f.user, f.existing, f.session, assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("sem verificação do usuário é recusado", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+		f.auth.Options.UserNotVerified = true
+
+		_, err := f.v.FinishLogin(f.user, f.existing, f.session, assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("origem fora do RPOrigins é recusada (phishing)", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+		evil := testRP
+		evil.Origin = "https://evil.com"
+
+		_, err := f.v.FinishLogin(f.user, f.existing, f.session, assertWith(t, evil, f.auth, f.cred, f.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("challenge de outra cerimônia é recusado (replay)", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+		_, secondSession, err := f.v.BeginLogin(f.user, f.existing)
+		require.NoError(t, err)
+
+		_, err = f.v.FinishLogin(f.user, f.existing, secondSession, assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("passkey de outro usuário é recusada", func(t *testing.T) {
+		bob := newLoginFixture(t, 0)
+		alice := newTestUser("alice")
+		_, aliceAuth, aliceCred := registerPasskey(t, bob.v, alice, 0)
+
+		// o dispositivo da Alice assina o challenge do login do Bob
+		_, err := bob.v.FinishLogin(bob.user, bob.existing, bob.session, assertWith(t, testRP, aliceAuth, aliceCred, bob.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("passkey que não está na lista do usuário é recusada", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+		// uma segunda passkey do mesmo usuário, que já foi removida do banco
+		_, auth, removedCred := registerPasskey(t, f.v, f.user, 0)
+
+		_, err := f.v.FinishLogin(f.user, f.existing, f.session, assertWith(t, testRP, auth, removedCred, f.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("resposta de cadastro no lugar do login é recusada", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+		regOptions, _, err := f.v.BeginRegistration(f.user, nil)
+		require.NoError(t, err)
+		attestation := attest(t, testRP, newAuthenticator(f.user), newDeviceCredential(), regOptions)
+
+		used, err := f.v.FinishLogin(f.user, f.existing, f.session, attestation)
+
+		assert.ErrorIs(t, err, core.ErrBadRequest)
+		assert.Nil(t, used)
+	})
+
+	t.Run("corpo malformado é erro do cliente", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+
+		_, err := f.v.FinishLogin(f.user, f.existing, f.session, []byte("{"))
+
+		assert.ErrorIs(t, err, core.ErrBadRequest)
+	})
+
+	t.Run("sessão corrompida é erro interno", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+
+		_, err := f.v.FinishLogin(f.user, f.existing, []byte("não é json"), assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		require.Error(t, err)
+		assert.False(t, isDomainError(err), "a sessão vem do Redis, não do cliente: deve virar 500")
 	})
 }

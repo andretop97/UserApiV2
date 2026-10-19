@@ -20,4 +20,5 @@ var (
 	ErrTokenInvalid             = &DomainError{Code: "TOKEN_INVALID", Status: http.StatusUnauthorized, message: "token invalid"}
 	ErrPasskeyAlreadyRegistered = &DomainError{Code: "PASSKEY_ALREADY_REGISTERED", Status: http.StatusConflict, message: "passkey already registered"}
 	ErrPasskeyNotFound          = &DomainError{Code: "PASSKEY_NOT_FOUND", Status: http.StatusNotFound, message: "passkey not found"}
+	ErrPasskeyInvalid           = &DomainError{Code: "PASSKEY_INVALID", Status: http.StatusUnauthorized, message: "invalid passkey"}
 )

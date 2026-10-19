@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/caarlos0/env/v11 v11.4.1
+	github.com/descope/virtualwebauthn v1.0.5
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/go-webauthn/webauthn v0.18.2
