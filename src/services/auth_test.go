@@ -19,6 +19,7 @@ type authDeps struct {
 	password *passwordEncryptionMock
 	mfa      *jwtProviderMock[core.MfaClaims]
 	session  *jwtProviderMock[core.SessionClaims]
+	passkeys *passkeyRepositoryMock
 }
 
 func setupAuthService(t *testing.T) (core.AuthService, *authDeps) {
@@ -29,6 +30,7 @@ func setupAuthService(t *testing.T) (core.AuthService, *authDeps) {
 		password: &passwordEncryptionMock{},
 		mfa:      &jwtProviderMock[core.MfaClaims]{},
 		session:  &jwtProviderMock[core.SessionClaims]{},
+		passkeys: &passkeyRepositoryMock{},
 	}
 	t.Cleanup(func() {
 		d.users.AssertExpectations(t)
@@ -36,8 +38,18 @@ func setupAuthService(t *testing.T) (core.AuthService, *authDeps) {
 		d.password.AssertExpectations(t)
 		d.mfa.AssertExpectations(t)
 		d.session.AssertExpectations(t)
+		d.passkeys.AssertExpectations(t)
 	})
-	return services.NewAuthService(d.users, d.auth, d.password, d.mfa, d.session), d
+	return services.NewAuthService(d.users, d.auth, d.passkeys, d.password, d.mfa, d.session), d
+}
+
+// passkeysOf monta n passkeys do usuário; o conteúdo não importa para o Login, só a quantidade.
+func passkeysOf(userID uuid.UUID, n int) []*core.Passkey {
+	passkeys := make([]*core.Passkey, n)
+	for i := range passkeys {
+		passkeys[i] = &core.Passkey{ID: []byte{byte(i + 1)}, UserID: userID, Data: []byte(`{}`)}
+	}
+	return passkeys
 }
 
 func storedUser() *core.User {
@@ -58,6 +70,7 @@ func TestAuthServiceLogin(t *testing.T) {
 		user := storedUser()
 		d.users.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
 		d.password.On("Verify", "senha", user.Password, user.PepperVersion).Return(true, nil)
+		d.passkeys.On("ListByUser", ctx, user.ID).Return(passkeysOf(user.ID, 1), nil)
 		d.mfa.On("GenerateToken", core.MfaClaims{UserID: user.ID}).Return("mfa-token", nil)
 		d.mfa.On("TTL").Return(10 * time.Minute)
 		d.auth.On("SetTemporaryToken", ctx, user.ID, "mfa-token", 10*time.Minute).Return(nil)
@@ -77,6 +90,7 @@ func TestAuthServiceLogin(t *testing.T) {
 		user := storedUser()
 		d.users.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
 		d.password.On("Verify", "senha", user.Password, user.PepperVersion).Return(true, nil)
+		d.passkeys.On("ListByUser", ctx, user.ID).Return(passkeysOf(user.ID, 1), nil)
 		d.mfa.On("GenerateToken", mock.Anything).Return("mfa-token", nil)
 		d.mfa.On("TTL").Return(10 * time.Minute)
 		d.auth.On("SetTemporaryToken", ctx, user.ID, "mfa-token", 10*time.Minute).Return(nil)
@@ -93,6 +107,7 @@ func TestAuthServiceLogin(t *testing.T) {
 		user := storedUser()
 		d.users.On("GetUserByEmail", ctx, "joao@example.com").Return(user, nil)
 		d.password.On("Verify", "senha", user.Password, user.PepperVersion).Return(true, nil)
+		d.passkeys.On("ListByUser", ctx, user.ID).Return(passkeysOf(user.ID, 1), nil)
 		d.mfa.On("GenerateToken", mock.Anything).Return("mfa-token", nil)
 		d.mfa.On("TTL").Return(10 * time.Minute)
 		d.auth.On("SetTemporaryToken", ctx, user.ID, "mfa-token", 10*time.Minute).Return(nil)
@@ -192,6 +207,7 @@ func TestAuthServiceLogin(t *testing.T) {
 		user := storedUser()
 		d.users.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
 		d.password.On("Verify", "senha", user.Password, user.PepperVersion).Return(true, nil)
+		d.passkeys.On("ListByUser", ctx, user.ID).Return(passkeysOf(user.ID, 1), nil)
 		d.mfa.On("GenerateToken", mock.Anything).Return("", errBoom)
 
 		got, err := svc.Login(ctx, user.Email, "senha")
@@ -205,6 +221,7 @@ func TestAuthServiceLogin(t *testing.T) {
 		user := storedUser()
 		d.users.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
 		d.password.On("Verify", "senha", user.Password, user.PepperVersion).Return(true, nil)
+		d.passkeys.On("ListByUser", ctx, user.ID).Return(passkeysOf(user.ID, 1), nil)
 		d.mfa.On("GenerateToken", mock.Anything).Return("mfa-token", nil)
 		d.mfa.On("TTL").Return(10 * time.Minute)
 		d.auth.On("SetTemporaryToken", ctx, user.ID, "mfa-token", 10*time.Minute).Return(errBoom)
@@ -213,6 +230,85 @@ func TestAuthServiceLogin(t *testing.T) {
 
 		assert.ErrorIs(t, err, errBoom)
 		assert.Nil(t, got)
+	})
+}
+
+// O next_step diz ao cliente qual cerimônia vem depois da senha. É só uma dica: quem
+// garante a D1 (primeira passkey só com mfa_token) é o register/begin, consultando o banco de novo.
+func TestAuthServiceLoginNextStep(t *testing.T) {
+	ctx := context.Background()
+
+	expectSuccessfulLogin := func(d *authDeps, user *core.User, passkeys []*core.Passkey) {
+		d.users.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
+		d.password.On("Verify", "senha", user.Password, user.PepperVersion).Return(true, nil)
+		d.passkeys.On("ListByUser", ctx, user.ID).Return(passkeys, nil).Once()
+		d.mfa.On("GenerateToken", core.MfaClaims{UserID: user.ID}).Return("mfa-token", nil)
+		d.mfa.On("TTL").Return(10 * time.Minute)
+		d.auth.On("SetTemporaryToken", ctx, user.ID, "mfa-token", 10*time.Minute).Return(nil)
+	}
+
+	cases := []struct {
+		name     string
+		passkeys func(userID uuid.UUID) []*core.Passkey
+		want     core.AuthStep
+	}{
+		{"sem passkey (lista vazia) vai para o cadastro", func(id uuid.UUID) []*core.Passkey { return []*core.Passkey{} }, core.StepWebAuthnRegister},
+		{"sem passkey (nil) vai para o cadastro", func(id uuid.UUID) []*core.Passkey { return nil }, core.StepWebAuthnRegister},
+		{"com uma passkey vai para o login", func(id uuid.UUID) []*core.Passkey { return passkeysOf(id, 1) }, core.StepWebAuthn},
+		{"com várias passkeys vai para o login", func(id uuid.UUID) []*core.Passkey { return passkeysOf(id, 3) }, core.StepWebAuthn},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, d := setupAuthService(t)
+			user := storedUser()
+			expectSuccessfulLogin(d, user, tc.passkeys(user.ID))
+
+			got, err := svc.Login(ctx, user.Email, "senha")
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got.NextStep)
+			assert.Equal(t, "mfa-token", got.Token, "o mfa_token é o mesmo nos dois passos")
+		})
+	}
+
+	// Antes da senha, o next_step contaria a qualquer um se o e-mail tem passkey.
+	t.Run("senha errada não consulta as passkeys", func(t *testing.T) {
+		svc, d := setupAuthService(t)
+		user := storedUser()
+		d.users.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
+		d.password.On("Verify", "errada", user.Password, user.PepperVersion).Return(false, nil)
+
+		_, err := svc.Login(ctx, user.Email, "errada")
+
+		assert.ErrorIs(t, err, core.ErrInvalidCredentials)
+		d.passkeys.AssertNotCalled(t, "ListByUser", mock.Anything, mock.Anything)
+	})
+
+	t.Run("e-mail inexistente não consulta as passkeys", func(t *testing.T) {
+		svc, d := setupAuthService(t)
+		d.users.On("GetUserByEmail", ctx, "x@example.com").Return(nil, core.ErrUserNotFound)
+		d.password.On("Verify", mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
+
+		_, err := svc.Login(ctx, "x@example.com", "senha")
+
+		assert.ErrorIs(t, err, core.ErrInvalidCredentials)
+		d.passkeys.AssertNotCalled(t, "ListByUser", mock.Anything, mock.Anything)
+	})
+
+	t.Run("erro ao listar passkeys é propagado e nenhum token é emitido nem gravado", func(t *testing.T) {
+		svc, d := setupAuthService(t)
+		user := storedUser()
+		d.users.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
+		d.password.On("Verify", "senha", user.Password, user.PepperVersion).Return(true, nil)
+		d.passkeys.On("ListByUser", ctx, user.ID).Return(nil, errBoom)
+
+		got, err := svc.Login(ctx, user.Email, "senha")
+
+		assert.ErrorIs(t, err, errBoom)
+		assert.NotErrorIs(t, err, core.ErrInvalidCredentials, "falha de banco é 500, não 401")
+		assert.Nil(t, got)
+		d.mfa.AssertNotCalled(t, "GenerateToken", mock.Anything)
+		d.auth.AssertNotCalled(t, "SetTemporaryToken", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }
 

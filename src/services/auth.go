@@ -10,6 +10,7 @@ import (
 type AuthService struct {
 	userRepository     core.UserRepository
 	authRepository     core.AuthRepository
+	passkeyRepository  core.PasskeyRepository
 	passwordEncryption core.PasswordEncryption
 	mfaTokens          core.JwtProvider[core.MfaClaims]
 	sessionTokens      core.JwtProvider[core.SessionClaims]
@@ -18,6 +19,7 @@ type AuthService struct {
 func NewAuthService(
 	userRepository core.UserRepository,
 	authRepository core.AuthRepository,
+	passkeyRepository core.PasskeyRepository,
 	passwordEncryption core.PasswordEncryption,
 	mfaTokens core.JwtProvider[core.MfaClaims],
 	sessionTokens core.JwtProvider[core.SessionClaims],
@@ -25,6 +27,7 @@ func NewAuthService(
 	return &AuthService{
 		userRepository:     userRepository,
 		authRepository:     authRepository,
+		passkeyRepository:  passkeyRepository,
 		passwordEncryption: passwordEncryption,
 		mfaTokens:          mfaTokens,
 		sessionTokens:      sessionTokens,
@@ -50,6 +53,12 @@ func (as *AuthService) Login(ctx context.Context, email, password string) (*core
 	if !isMatch {
 		return nil, core.ErrInvalidCredentials
 	}
+
+	passkeys, err := as.passkeyRepository.ListByUser(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	token, err := as.mfaTokens.GenerateToken(core.MfaClaims{UserID: user.ID})
 	if err != nil {
 		return nil, err
@@ -63,7 +72,7 @@ func (as *AuthService) Login(ctx context.Context, email, password string) (*core
 	result := core.LoginResult{
 		Token:     token,
 		ExpiresIn: as.mfaTokens.TTL(),
-		NextStep:  core.StepWebAuthn,
+		NextStep:  nextLoginStep(passkeys),
 	}
 	return &result, nil
 }
@@ -82,4 +91,11 @@ func (as *AuthService) WebAuthnBegin(ctx context.Context, email string) (string,
 
 func (as *AuthService) WebAuthnFinish(ctx context.Context, email, credential string) error {
 	return nil
+}
+
+func nextLoginStep(passkeys []*core.Passkey) core.AuthStep {
+	if len(passkeys) == 0 {
+		return core.StepWebAuthnRegister
+	}
+	return core.StepWebAuthn
 }

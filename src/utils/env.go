@@ -1,7 +1,10 @@
 package utils
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -66,8 +69,8 @@ type AuthEnv struct {
 	LoginTokenTTL      time.Duration `env:"LOGIN_TOKEN_TTL" envDefault:"10m"`
 	SessionIdleTTL     time.Duration `env:"SESSION_IDLE_TTL" envDefault:"24h"`
 	SessionAbsoluteTTL time.Duration `env:"SESSION_ABSOLUTE_TTL" envDefault:"72h"`
-	MfaTokenSecret     string        `env:"MFA_TOKEN_SECRET,required"`
-	SessionTokenSecret string        `env:"SESSION_TOKEN_SECRET,required"`
+	MfaTokenSecret     string        `env:"MFA_TOKEN_SECRET,notEmpty"`
+	SessionTokenSecret string        `env:"SESSION_TOKEN_SECRET,notEmpty"`
 }
 
 func NewAuthEnv() (*AuthEnv, error) {
@@ -80,7 +83,7 @@ func NewAuthEnv() (*AuthEnv, error) {
 
 type PepperEnv struct {
 	Version int    `env:"PEPPER_VERSION" envDefault:"0"`
-	Secret  string `env:"PEPPER_SECRETS,required"`
+	Secret  string `env:"PEPPER_SECRETS,notEmpty"`
 }
 
 func NewPepperEnv() (*PepperEnv, error) {
@@ -105,4 +108,39 @@ func NewArgon2Env() (*Argon2Env, error) {
 		return nil, err
 	}
 	return &argon2Env, nil
+}
+
+type WebAuthnEnv struct {
+	RPID        string        `env:"WEBAUTHN_RP_ID,notEmpty"`
+	RPName      string        `env:"WEBAUTHN_RP_NAME" envDefault:"UserApiV2"`
+	RPOrigins   []string      `env:"WEBAUTHN_RP_ORIGINS,notEmpty" envSeparator:","`
+	CeremonyTTL time.Duration `env:"WEBAUTHN_CEREMONY_TTL" envDefault:"5m"`
+}
+
+func (we *WebAuthnEnv) validate() error {
+	if strings.Contains(we.RPID, "://") || strings.Contains(we.RPID, ":") || strings.Contains(we.RPID, "/") {
+		return fmt.Errorf("WEBAUTHN_RP_ID must be a bare host (no scheme, port or path): %q", we.RPID)
+	}
+	for _, origin := range we.RPOrigins {
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" {
+			return fmt.Errorf("WEBAUTHN_RP_ORIGINS has an invalid origin (expected scheme://host[:port], no trailing slash): %q", origin)
+		}
+	}
+	if we.CeremonyTTL <= 0 {
+		return errors.New("WEBAUTHN_CEREMONY_TTL must be positive")
+	}
+	return nil
+}
+
+func NewWebAuthnEnv() (*WebAuthnEnv, error) {
+	webAuthnEnv, err := env.ParseAs[WebAuthnEnv]()
+	if err != nil {
+		return nil, err
+	}
+	if err := webAuthnEnv.validate(); err != nil {
+		return nil, err
+	}
+
+	return &webAuthnEnv, nil
 }

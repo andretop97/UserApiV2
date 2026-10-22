@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/andretop97/UserApiV2/src/core"
 	"github.com/descope/virtualwebauthn"
@@ -198,16 +199,62 @@ func TestToCredentials(t *testing.T) {
 	})
 }
 
-// newTestVerifier monta o adapter pelo construtor, com uma instância real da lib.
+const testCeremonyTTL = 5 * time.Minute
+
+// newTestVerifier monta o adapter pelo construtor, com uma instância real da lib
+// configurada como no bootstrap (timeouts aplicados pelo servidor).
 func newTestVerifier(t *testing.T) *WebAuthnVerifier {
 	t.Helper()
 	w, err := webauthn.New(&webauthn.Config{
 		RPID:          "localhost",
 		RPDisplayName: "UserApiV2",
 		RPOrigins:     []string{"http://localhost:3000"},
+		Timeouts: webauthn.TimeoutsConfig{
+			Login:        webauthn.TimeoutConfig{Enforce: true, Timeout: testCeremonyTTL},
+			Registration: webauthn.TimeoutConfig{Enforce: true, Timeout: testCeremonyTTL},
+		},
 	})
 	require.NoError(t, err)
-	return NewWebAuthnVerifier(w).(*WebAuthnVerifier)
+	v, err := NewWebAuthnVerifier(w)
+	require.NoError(t, err)
+	return v.(*WebAuthnVerifier)
+}
+
+func TestNewWebAuthnVerifier(t *testing.T) {
+	t.Run("aceita uma instância configurada", func(t *testing.T) {
+		w, err := webauthn.New(&webauthn.Config{RPID: "localhost", RPDisplayName: "UserApiV2", RPOrigins: []string{"http://localhost:3000"}})
+		require.NoError(t, err)
+
+		v, err := NewWebAuthnVerifier(w)
+
+		require.NoError(t, err)
+		assert.NotNil(t, v)
+	})
+
+	t.Run("instância nil falha no boot, não na primeira cerimônia", func(t *testing.T) {
+		v, err := NewWebAuthnVerifier(nil)
+
+		assert.Error(t, err)
+		assert.Nil(t, v)
+	})
+
+	t.Run("instância sem Config falha no boot", func(t *testing.T) {
+		v, err := NewWebAuthnVerifier(&webauthn.WebAuthn{})
+
+		assert.Error(t, err)
+		assert.Nil(t, v)
+	})
+}
+
+// expireSession devolve a sessão com o prazo vencido, como se o usuário tivesse demorado demais.
+func expireSession(t *testing.T, session []byte) []byte {
+	t.Helper()
+	var sess webauthn.SessionData
+	require.NoError(t, json.Unmarshal(session, &sess))
+	sess.Expires = time.Now().Add(-time.Second)
+	expired, err := json.Marshal(sess)
+	require.NoError(t, err)
+	return expired
 }
 
 // creationOptions espelha só os campos das opções de cadastro que os testes verificam.
@@ -290,6 +337,13 @@ func TestBeginRegistration(t *testing.T) {
 
 		assert.Equal(t, opts.PublicKey.Challenge.String(), sess.Challenge)
 		assert.Equal(t, user.ID[:], sess.UserID)
+	})
+
+	t.Run("sessão expira no prazo da cerimônia", func(t *testing.T) {
+		before := time.Now()
+		_, sess := beginRegistration(t, newTestVerifier(t), user, nil)
+
+		assert.WithinDuration(t, before.Add(testCeremonyTTL), sess.Expires, 5*time.Second)
 	})
 
 	t.Run("sem passkeys não há exclusões", func(t *testing.T) {
@@ -449,6 +503,17 @@ func TestFinishRegistration(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = v.FinishRegistration(bob, nil, session, attest(t, testRP, newAuthenticator(alice), newDeviceCredential(), options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("sessão expirada é recusada", func(t *testing.T) {
+		v := newTestVerifier(t)
+		user := newTestUser("joao")
+		options, session, err := v.BeginRegistration(user, nil)
+		require.NoError(t, err)
+
+		_, err = v.FinishRegistration(user, nil, expireSession(t, session), attest(t, testRP, newAuthenticator(user), newDeviceCredential(), options))
 
 		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
 	})
@@ -648,6 +713,14 @@ func TestFinishLogin(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = f.v.FinishLogin(f.user, f.existing, secondSession, assertWith(t, testRP, f.auth, f.cred, f.options))
+
+		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
+	})
+
+	t.Run("sessão expirada é recusada", func(t *testing.T) {
+		f := newLoginFixture(t, 0)
+
+		_, err := f.v.FinishLogin(f.user, f.existing, expireSession(t, f.session), assertWith(t, testRP, f.auth, f.cred, f.options))
 
 		assert.ErrorIs(t, err, core.ErrPasskeyInvalid)
 	})

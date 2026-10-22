@@ -7,9 +7,20 @@ import (
 	"github.com/google/uuid"
 )
 
+type CeremonyType string
+
+const (
+	CeremonyRegistration CeremonyType = "register"
+	CeremonyLogin        CeremonyType = "login"
+)
+
 type AuthRepository interface {
 	SetTemporaryToken(ctx context.Context, userID uuid.UUID, token string, ttl time.Duration) error
 	SetSessionToken(ctx context.Context, userID uuid.UUID, token string, ttl time.Duration) error
+
 	GetTemporaryToken(ctx context.Context, userID uuid.UUID) (string, error)
 	GetSessionToken(ctx context.Context, userID uuid.UUID) (string, error)
+
+	SaveCeremonySession(ctx context.Context, userID uuid.UUID, ceremony CeremonyType, session []byte, ttl time.Duration) error
+	ConsumeCeremonySession(ctx context.Context, userID uuid.UUID, ceremony CeremonyType) ([]byte, error)
 }

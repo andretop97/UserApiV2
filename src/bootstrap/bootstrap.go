@@ -15,6 +15,7 @@ import (
 	"github.com/andretop97/UserApiV2/src/security"
 	"github.com/andretop97/UserApiV2/src/services"
 	"github.com/andretop97/UserApiV2/src/utils"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	rdb "github.com/redis/go-redis/v9"
 )
@@ -68,6 +69,11 @@ func NewContainer() (container *Container, err error) {
 		return nil, err
 	}
 
+	webAuthnEnv, err := utils.NewWebAuthnEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	var closers []func() error
 
 	defer func() {
@@ -109,6 +115,8 @@ func NewContainer() (container *Container, err error) {
 		return nil, err
 	}
 
+	passkeyRepository := postgres.NewPasskeyRepository(pgxPool)
+
 	userRepository := repositories.NewUserRepository(redisRepository, postgresRepository, slog.Default())
 
 	argonConfig := security.NewArgon2Params(argonEnv)
@@ -135,7 +143,26 @@ func NewContainer() (container *Container, err error) {
 		return nil, err
 	}
 
-	authService := services.NewAuthService(userRepository, authRepository, passwordEncryption, mfaTokens, sessionTokens)
+	w, err := webauthn.New(&webauthn.Config{
+		RPID:          webAuthnEnv.RPID,
+		RPDisplayName: webAuthnEnv.RPName,
+		RPOrigins:     webAuthnEnv.RPOrigins,
+		Timeouts: webauthn.TimeoutsConfig{
+			Login:        webauthn.TimeoutConfig{Enforce: true, Timeout: webAuthnEnv.CeremonyTTL},
+			Registration: webauthn.TimeoutConfig{Enforce: true, Timeout: webAuthnEnv.CeremonyTTL},
+		},
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = security.NewWebAuthnVerifier(w)
+	if err != nil {
+		return nil, err
+	}
+
+	authService := services.NewAuthService(userRepository, authRepository, passkeyRepository, passwordEncryption, mfaTokens, sessionTokens)
 
 	routerControllers := &routes.Controllers{
 		User: controllers.NewUserController(userService),

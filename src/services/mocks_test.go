@@ -51,6 +51,22 @@ func (m *userRepositoryMock) DeleteUser(ctx context.Context, id uuid.UUID) error
 	return m.Called(ctx, id).Error(0)
 }
 
+type passkeyRepositoryMock struct{ mock.Mock }
+
+func (m *passkeyRepositoryMock) Create(ctx context.Context, p *core.Passkey) error {
+	return m.Called(ctx, p).Error(0)
+}
+
+func (m *passkeyRepositoryMock) ListByUser(ctx context.Context, userID uuid.UUID) ([]*core.Passkey, error) {
+	args := m.Called(ctx, userID)
+	passkeys, _ := args.Get(0).([]*core.Passkey)
+	return passkeys, args.Error(1)
+}
+
+func (m *passkeyRepositoryMock) UpdateAfterLogin(ctx context.Context, id []byte, data []byte) error {
+	return m.Called(ctx, id, data).Error(0)
+}
+
 type authRepositoryMock struct{ mock.Mock }
 
 func (m *authRepositoryMock) SetTemporaryToken(ctx context.Context, userID uuid.UUID, token string, ttl time.Duration) error {
@@ -69,6 +85,16 @@ func (m *authRepositoryMock) GetTemporaryToken(ctx context.Context, userID uuid.
 func (m *authRepositoryMock) GetSessionToken(ctx context.Context, userID uuid.UUID) (string, error) {
 	args := m.Called(ctx, userID)
 	return args.String(0), args.Error(1)
+}
+
+func (m *authRepositoryMock) SaveCeremonySession(ctx context.Context, userID uuid.UUID, ceremony core.CeremonyType, session []byte, ttl time.Duration) error {
+	return m.Called(ctx, userID, ceremony, session, ttl).Error(0)
+}
+
+func (m *authRepositoryMock) ConsumeCeremonySession(ctx context.Context, userID uuid.UUID, ceremony core.CeremonyType) ([]byte, error) {
+	args := m.Called(ctx, userID, ceremony)
+	session, _ := args.Get(0).([]byte)
+	return session, args.Error(1)
 }
 
 type passwordEncryptionMock struct{ mock.Mock }

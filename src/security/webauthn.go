@@ -3,6 +3,7 @@ package security
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -16,10 +17,13 @@ type WebAuthnVerifier struct {
 	w *webauthn.WebAuthn
 }
 
-func NewWebAuthnVerifier(w *webauthn.WebAuthn) core.WebAuthnVerifier {
+func NewWebAuthnVerifier(w *webauthn.WebAuthn) (core.WebAuthnVerifier, error) {
+	if w == nil || w.Config == nil {
+		return nil, errors.New("webauthn verifier: a configured instance is required")
+	}
 	return &WebAuthnVerifier{
 		w: w,
-	}
+	}, nil
 }
 
 func (wf *WebAuthnVerifier) BeginRegistration(user *core.User, existing []*core.Passkey) (options json.RawMessage, session []byte, err error) {

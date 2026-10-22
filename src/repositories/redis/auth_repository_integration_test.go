@@ -150,6 +150,60 @@ func TestAuthRepositorySessionToken(t *testing.T) {
 	})
 }
 
+// No go-redis, TTL 0 grava sem expiração e -1ns é KEEPTTL: o token valeria para sempre.
+func TestAuthRepositoryRejectsNonPositiveTTL(t *testing.T) {
+	ctx := context.Background()
+	invalid := map[string]time.Duration{"zero": 0, "KeepTTL": rdb.KeepTTL, "negativo": -time.Minute}
+
+	setters := map[string]struct {
+		set func(repo core.AuthRepository, id uuid.UUID, ttl time.Duration) error
+		key func(id uuid.UUID) string
+	}{
+		"token MFA": {
+			set: func(repo core.AuthRepository, id uuid.UUID, ttl time.Duration) error {
+				return repo.SetTemporaryToken(ctx, id, "mfa-token", ttl)
+			},
+			key: mfaKey,
+		},
+		"token de sessão": {
+			set: func(repo core.AuthRepository, id uuid.UUID, ttl time.Duration) error {
+				return repo.SetSessionToken(ctx, id, "session-token", ttl)
+			},
+			key: sessionKey,
+		},
+	}
+
+	for kind, s := range setters {
+		for name, ttl := range invalid {
+			t.Run(kind+" com TTL "+name+" é recusado e nada é gravado", func(t *testing.T) {
+				repo := setupAuth(t)
+				id := uuid.New()
+
+				err := s.set(repo, id, ttl)
+
+				require.Error(t, err)
+				var domainErr *core.DomainError
+				assert.False(t, errors.As(err, &domainErr), "TTL inválido é erro do servidor, não do cliente")
+				exists, err := testClient.Exists(ctx, s.key(id)).Result()
+				require.NoError(t, err)
+				assert.Zero(t, exists)
+			})
+		}
+	}
+
+	t.Run("TTL inválido não derruba o token MFA vigente", func(t *testing.T) {
+		repo := setupAuth(t)
+		id := uuid.New()
+		require.NoError(t, repo.SetTemporaryToken(ctx, id, "vigente", mfaTTL))
+
+		require.Error(t, repo.SetTemporaryToken(ctx, id, "sem-ttl", 0))
+
+		got, err := repo.GetTemporaryToken(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "vigente", got)
+	})
+}
+
 func TestAuthRepositoryIsolation(t *testing.T) {
 	ctx := context.Background()
 
