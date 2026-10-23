@@ -2,6 +2,7 @@ package services_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -67,6 +68,34 @@ func (m *passkeyRepositoryMock) UpdateAfterLogin(ctx context.Context, id []byte,
 	return m.Called(ctx, id, data).Error(0)
 }
 
+type webAuthnVerifierMock struct{ mock.Mock }
+
+func (m *webAuthnVerifierMock) BeginRegistration(user *core.User, existing []*core.Passkey) (json.RawMessage, []byte, error) {
+	args := m.Called(user, existing)
+	options, _ := args.Get(0).(json.RawMessage)
+	session, _ := args.Get(1).([]byte)
+	return options, session, args.Error(2)
+}
+
+func (m *webAuthnVerifierMock) FinishRegistration(user *core.User, existing []*core.Passkey, session []byte, response []byte) (*core.Passkey, error) {
+	args := m.Called(user, existing, session, response)
+	passkey, _ := args.Get(0).(*core.Passkey)
+	return passkey, args.Error(1)
+}
+
+func (m *webAuthnVerifierMock) BeginLogin(user *core.User, existing []*core.Passkey) (json.RawMessage, []byte, error) {
+	args := m.Called(user, existing)
+	options, _ := args.Get(0).(json.RawMessage)
+	session, _ := args.Get(1).([]byte)
+	return options, session, args.Error(2)
+}
+
+func (m *webAuthnVerifierMock) FinishLogin(user *core.User, existing []*core.Passkey, session []byte, response []byte) (*core.Passkey, error) {
+	args := m.Called(user, existing, session, response)
+	passkey, _ := args.Get(0).(*core.Passkey)
+	return passkey, args.Error(1)
+}
+
 type authRepositoryMock struct{ mock.Mock }
 
 func (m *authRepositoryMock) SetTemporaryToken(ctx context.Context, userID uuid.UUID, token string, ttl time.Duration) error {
@@ -85,6 +114,10 @@ func (m *authRepositoryMock) GetTemporaryToken(ctx context.Context, userID uuid.
 func (m *authRepositoryMock) GetSessionToken(ctx context.Context, userID uuid.UUID) (string, error) {
 	args := m.Called(ctx, userID)
 	return args.String(0), args.Error(1)
+}
+
+func (m *authRepositoryMock) DeleteTemporaryToken(ctx context.Context, userID uuid.UUID) error {
+	return m.Called(ctx, userID).Error(0)
 }
 
 func (m *authRepositoryMock) SaveCeremonySession(ctx context.Context, userID uuid.UUID, ceremony core.CeremonyType, session []byte, ttl time.Duration) error {

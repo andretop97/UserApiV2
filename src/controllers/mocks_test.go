@@ -34,22 +34,28 @@ func (m *authServiceMock) Login(ctx context.Context, email, password string) (*c
 	return r, args.Error(1)
 }
 
-func (m *authServiceMock) RegisterWebAuthnBegin(ctx context.Context, email string) (string, error) {
-	args := m.Called(ctx, email)
-	return args.String(0), args.Error(1)
+func (m *authServiceMock) RegisterWebAuthnBegin(ctx context.Context, mfaToken string) (json.RawMessage, error) {
+	args := m.Called(ctx, mfaToken)
+	options, _ := args.Get(0).(json.RawMessage)
+	return options, args.Error(1)
 }
 
-func (m *authServiceMock) RegisterWebAuthnFinish(ctx context.Context, email, credential string) error {
-	return m.Called(ctx, email, credential).Error(0)
+func (m *authServiceMock) RegisterWebAuthnFinish(ctx context.Context, mfaToken string, response []byte) (*core.SessionResult, error) {
+	args := m.Called(ctx, mfaToken, response)
+	session, _ := args.Get(0).(*core.SessionResult)
+	return session, args.Error(1)
 }
 
-func (m *authServiceMock) WebAuthnBegin(ctx context.Context, email string) (string, error) {
-	args := m.Called(ctx, email)
-	return args.String(0), args.Error(1)
+func (m *authServiceMock) WebAuthnBegin(ctx context.Context, mfaToken string) (json.RawMessage, error) {
+	args := m.Called(ctx, mfaToken)
+	options, _ := args.Get(0).(json.RawMessage)
+	return options, args.Error(1)
 }
 
-func (m *authServiceMock) WebAuthnFinish(ctx context.Context, email, credential string) error {
-	return m.Called(ctx, email, credential).Error(0)
+func (m *authServiceMock) WebAuthnFinish(ctx context.Context, mfaToken string, response []byte) (*core.SessionResult, error) {
+	args := m.Called(ctx, mfaToken, response)
+	session, _ := args.Get(0).(*core.SessionResult)
+	return session, args.Error(1)
 }
 
 type userServiceMock struct{ mock.Mock }

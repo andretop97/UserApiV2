@@ -88,3 +88,8 @@ func (r *AuthRepository) ConsumeCeremonySession(ctx context.Context, userID uuid
 	}
 	return session, nil
 }
+
+func (r *AuthRepository) DeleteTemporaryToken(ctx context.Context, userID uuid.UUID) error {
+	return r.client.Del(ctx, mfaKey(userID)).Err()
+
+}

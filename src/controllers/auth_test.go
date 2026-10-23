@@ -118,10 +118,10 @@ func TestAuthControllerWebAuthnStubs(t *testing.T) {
 	for _, path := range paths {
 		t.Run("requisição sem corpo não responde 200 vazio: "+path, func(t *testing.T) {
 			router, svc := setupAuthRouter(t)
-			svc.On("WebAuthnBegin", mock.Anything, mock.Anything).Return("", core.ErrBadRequest).Maybe()
-			svc.On("WebAuthnFinish", mock.Anything, mock.Anything, mock.Anything).Return(core.ErrBadRequest).Maybe()
-			svc.On("RegisterWebAuthnBegin", mock.Anything, mock.Anything).Return("", core.ErrBadRequest).Maybe()
-			svc.On("RegisterWebAuthnFinish", mock.Anything, mock.Anything, mock.Anything).Return(core.ErrBadRequest).Maybe()
+			svc.On("WebAuthnBegin", mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
+			svc.On("WebAuthnFinish", mock.Anything, mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
+			svc.On("RegisterWebAuthnBegin", mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
+			svc.On("RegisterWebAuthnFinish", mock.Anything, mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
 
 			rec := do(t, router, http.MethodPost, path, "")
 

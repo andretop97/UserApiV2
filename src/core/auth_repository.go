@@ -21,6 +21,8 @@ type AuthRepository interface {
 	GetTemporaryToken(ctx context.Context, userID uuid.UUID) (string, error)
 	GetSessionToken(ctx context.Context, userID uuid.UUID) (string, error)
 
+	DeleteTemporaryToken(ctx context.Context, userID uuid.UUID) error
+
 	SaveCeremonySession(ctx context.Context, userID uuid.UUID, ceremony CeremonyType, session []byte, ttl time.Duration) error
 	ConsumeCeremonySession(ctx context.Context, userID uuid.UUID, ceremony CeremonyType) ([]byte, error)
 }

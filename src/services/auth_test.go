@@ -20,7 +20,10 @@ type authDeps struct {
 	mfa      *jwtProviderMock[core.MfaClaims]
 	session  *jwtProviderMock[core.SessionClaims]
 	passkeys *passkeyRepositoryMock
+	verifier *webAuthnVerifierMock
 }
+
+const testCeremonyTTL = 5 * time.Minute
 
 func setupAuthService(t *testing.T) (core.AuthService, *authDeps) {
 	t.Helper()
@@ -31,6 +34,7 @@ func setupAuthService(t *testing.T) (core.AuthService, *authDeps) {
 		mfa:      &jwtProviderMock[core.MfaClaims]{},
 		session:  &jwtProviderMock[core.SessionClaims]{},
 		passkeys: &passkeyRepositoryMock{},
+		verifier: &webAuthnVerifierMock{},
 	}
 	t.Cleanup(func() {
 		d.users.AssertExpectations(t)
@@ -39,8 +43,9 @@ func setupAuthService(t *testing.T) (core.AuthService, *authDeps) {
 		d.mfa.AssertExpectations(t)
 		d.session.AssertExpectations(t)
 		d.passkeys.AssertExpectations(t)
+		d.verifier.AssertExpectations(t)
 	})
-	return services.NewAuthService(d.users, d.auth, d.passkeys, d.password, d.mfa, d.session), d
+	return services.NewAuthService(d.users, d.auth, d.passkeys, d.password, d.mfa, d.session, d.verifier, testCeremonyTTL), d
 }
 
 // passkeysOf monta n passkeys do usuário; o conteúdo não importa para o Login, só a quantidade.
@@ -310,58 +315,4 @@ func TestAuthServiceLoginNextStep(t *testing.T) {
 		d.mfa.AssertNotCalled(t, "GenerateToken", mock.Anything)
 		d.auth.AssertNotCalled(t, "SetTemporaryToken", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
-}
-
-// Os fluxos WebAuthn ainda são stubs. Estes testes garantem que eles não aceitem
-// qualquer coisa enquanto não forem implementados.
-func TestAuthServiceWebAuthn(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("WebAuthnBegin devolve um challenge", func(t *testing.T) {
-		svc, d := setupAuthService(t)
-		allowAnyLookup(d)
-
-		challenge, err := svc.WebAuthnBegin(ctx, "joao@example.com")
-
-		require.NoError(t, err)
-		assert.NotEmpty(t, challenge)
-	})
-
-	t.Run("WebAuthnFinish rejeita credencial inválida", func(t *testing.T) {
-		svc, d := setupAuthService(t)
-		allowAnyLookup(d)
-
-		err := svc.WebAuthnFinish(ctx, "joao@example.com", "credencial-invalida")
-
-		assert.Error(t, err)
-	})
-
-	t.Run("RegisterWebAuthnBegin devolve um challenge", func(t *testing.T) {
-		svc, d := setupAuthService(t)
-		allowAnyLookup(d)
-
-		challenge, err := svc.RegisterWebAuthnBegin(ctx, "joao@example.com")
-
-		require.NoError(t, err)
-		assert.NotEmpty(t, challenge)
-	})
-
-	t.Run("RegisterWebAuthnFinish rejeita credencial inválida", func(t *testing.T) {
-		svc, d := setupAuthService(t)
-		allowAnyLookup(d)
-
-		err := svc.RegisterWebAuthnFinish(ctx, "joao@example.com", "credencial-invalida")
-
-		assert.Error(t, err)
-	})
-}
-
-// allowAnyLookup libera as dependências que uma implementação real do WebAuthn
-// provavelmente consulta, para que os testes acima só verifiquem o resultado.
-func allowAnyLookup(d *authDeps) {
-	user := storedUser()
-	d.users.On("GetUserByEmail", mock.Anything, mock.Anything).Return(user, nil).Maybe()
-	d.users.On("GetUserByID", mock.Anything, mock.Anything).Return(user, nil).Maybe()
-	d.auth.On("GetTemporaryToken", mock.Anything, mock.Anything).Return("", core.ErrTokenInvalid).Maybe()
-	d.mfa.On("ValidateToken", mock.Anything).Return(core.MfaClaims{}, core.ErrTokenExpired).Maybe()
 }

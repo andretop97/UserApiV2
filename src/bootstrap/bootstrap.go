@@ -157,12 +157,20 @@ func NewContainer() (container *Container, err error) {
 		return nil, err
 	}
 
-	_, err = security.NewWebAuthnVerifier(w)
+	webAuthnVerifier, err := security.NewWebAuthnVerifier(w)
 	if err != nil {
 		return nil, err
 	}
 
-	authService := services.NewAuthService(userRepository, authRepository, passkeyRepository, passwordEncryption, mfaTokens, sessionTokens)
+	authService := services.NewAuthService(
+		userRepository,
+		authRepository,
+		passkeyRepository,
+		passwordEncryption,
+		mfaTokens,
+		sessionTokens,
+		webAuthnVerifier,
+		webAuthnEnv.CeremonyTTL)
 
 	routerControllers := &routes.Controllers{
 		User: controllers.NewUserController(userService),

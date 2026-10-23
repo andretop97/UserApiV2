@@ -150,6 +150,60 @@ func TestAuthRepositorySessionToken(t *testing.T) {
 	})
 }
 
+func TestAuthRepositoryDeleteTemporaryToken(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("apaga o token MFA e ele deixa de valer", func(t *testing.T) {
+		repo := setupAuth(t)
+		id := uuid.New()
+		require.NoError(t, repo.SetTemporaryToken(ctx, id, "mfa-token", mfaTTL))
+
+		require.NoError(t, repo.DeleteTemporaryToken(ctx, id))
+
+		_, err := repo.GetTemporaryToken(ctx, id)
+		assert.ErrorIs(t, err, core.ErrTokenInvalid)
+		exists, err := testClient.Exists(ctx, mfaKey(id)).Result()
+		require.NoError(t, err)
+		assert.Zero(t, exists)
+	})
+
+	t.Run("apagar token inexistente não é erro (idempotente)", func(t *testing.T) {
+		repo := setupAuth(t)
+
+		assert.NoError(t, repo.DeleteTemporaryToken(ctx, uuid.New()))
+	})
+
+	t.Run("não apaga a sessão nem a cerimônia do usuário", func(t *testing.T) {
+		repo := setupAuth(t)
+		id := uuid.New()
+		require.NoError(t, repo.SetTemporaryToken(ctx, id, "mfa-token", mfaTTL))
+		require.NoError(t, repo.SetSessionToken(ctx, id, "session-token", sessionTTL))
+		require.NoError(t, repo.SaveCeremonySession(ctx, id, core.CeremonyLogin, []byte("sessao"), time.Minute))
+
+		require.NoError(t, repo.DeleteTemporaryToken(ctx, id))
+
+		session, err := repo.GetSessionToken(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "session-token", session)
+		ceremony, err := repo.ConsumeCeremonySession(ctx, id, core.CeremonyLogin)
+		require.NoError(t, err)
+		assert.Equal(t, []byte("sessao"), ceremony)
+	})
+
+	t.Run("não apaga o token de outro usuário", func(t *testing.T) {
+		repo := setupAuth(t)
+		a, b := uuid.New(), uuid.New()
+		require.NoError(t, repo.SetTemporaryToken(ctx, a, "token-a", mfaTTL))
+		require.NoError(t, repo.SetTemporaryToken(ctx, b, "token-b", mfaTTL))
+
+		require.NoError(t, repo.DeleteTemporaryToken(ctx, a))
+
+		got, err := repo.GetTemporaryToken(ctx, b)
+		require.NoError(t, err)
+		assert.Equal(t, "token-b", got)
+	})
+}
+
 // No go-redis, TTL 0 grava sem expiração e -1ns é KEEPTTL: o token valeria para sempre.
 func TestAuthRepositoryRejectsNonPositiveTTL(t *testing.T) {
 	ctx := context.Background()
