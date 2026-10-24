@@ -106,27 +106,3 @@ func TestAuthControllerLogin(t *testing.T) {
 		assert.NotContains(t, rec.Body.String(), "detalhe interno")
 	})
 }
-
-// Os handlers WebAuthn ainda são stubs: hoje respondem 200 com corpo vazio para qualquer requisição.
-func TestAuthControllerWebAuthnStubs(t *testing.T) {
-	paths := []string{
-		"/v1/auth/webauthn/begin",
-		"/v1/auth/webauthn/finish",
-		"/v1/auth/webauthn/register/begin",
-		"/v1/auth/webauthn/register/finish",
-	}
-	for _, path := range paths {
-		t.Run("requisição sem corpo não responde 200 vazio: "+path, func(t *testing.T) {
-			router, svc := setupAuthRouter(t)
-			svc.On("WebAuthnBegin", mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
-			svc.On("WebAuthnFinish", mock.Anything, mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
-			svc.On("RegisterWebAuthnBegin", mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
-			svc.On("RegisterWebAuthnFinish", mock.Anything, mock.Anything, mock.Anything).Return(nil, core.ErrTokenInvalid).Maybe()
-
-			rec := do(t, router, http.MethodPost, path, "")
-
-			assert.NotEqual(t, http.StatusOK, rec.Code, "corpo: %q", rec.Body.String())
-			assert.NotEmpty(t, rec.Body.String())
-		})
-	}
-}

@@ -22,3 +22,17 @@ func (r *AuthLoginResponse) FromLogin(login *core.LoginResult) {
 	r.ExpiresIn = int(login.ExpiresIn.Seconds())
 	r.NextStep = string(login.NextStep)
 }
+
+type AuthSessionResponse struct {
+	Status    string `json:"status"`
+	Token     string `json:"session_token"`
+	TokenType string `json:"token_type"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+func (r *AuthSessionResponse) FromSession(session *core.SessionResult) {
+	r.Status = "authenticated"
+	r.Token = session.Token
+	r.TokenType = "Bearer"
+	r.ExpiresIn = int(session.ExpiresIn.Seconds())
+}
